@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String functionsBaseUrl =
-      'https://nm5x7yfa.ap-southeast.insforge.app/functions';
-  static const String appBaseUrl = 'https://nm5x7yfa.ap-southeast.insforge.app';
-  static const String anonKey = String.fromEnvironment(
-    'INSFORGE_ANON_KEY',
-    defaultValue: '',
+  static const Duration _requestTimeout = Duration(seconds: 30);
+
+  static const String fastApiBaseUrl = String.fromEnvironment(
+    'FASTAPI_BASE_URL',
+    defaultValue: 'http://192.168.1.13:8000', // Safe default fallback
   );
+
   static const String userId = String.fromEnvironment(
     'SOORA_USER_ID',
     defaultValue: '',
@@ -31,22 +31,18 @@ class ApiService {
     String filePath,
   ) async {
     final uploadUrlResponse = await http.get(
-      Uri.parse('$functionsBaseUrl/storage-upload-url'),
+      Uri.parse('$fastApiBaseUrl/api/v1/storage/upload-url'),
       headers: _headers(),
-    );
+    ).timeout(_requestTimeout);
 
     if (uploadUrlResponse.statusCode != 200) {
-      throw Exception('Failed to generate upload URL');
+      throw Exception(_extractErrorMessage(uploadUrlResponse, 'Failed to generate upload URL'));
     }
 
     final uploadUrlPayload =
         jsonDecode(uploadUrlResponse.body) as Map<String, dynamic>;
     final uploadUrl = uploadUrlPayload['uploadUrl'] as String?;
     final path = uploadUrlPayload['path'] as String?;
-    final method = (uploadUrlPayload['method'] as String?)?.toLowerCase();
-    final fields = uploadUrlPayload['fields'] as Map<String, dynamic>?;
-    final confirmRequired = uploadUrlPayload['confirmRequired'] == true;
-    final confirmUrl = uploadUrlPayload['confirmUrl'] as String?;
 
     if (uploadUrl == null || path == null) {
       throw Exception('Invalid upload URL response');
@@ -54,69 +50,25 @@ class ApiService {
 
     final file = File(filePath);
 
-    if (method == 'presigned' && fields != null && fields.isNotEmpty) {
-      final uploadRequest = http.MultipartRequest('POST', Uri.parse(uploadUrl));
+    final bytes = await file.readAsBytes();
+    final uploadResponse = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'Content-Type': 'audio/mp4'},
+      body: bytes,
+    ).timeout(_requestTimeout);
 
-      fields.forEach((key, value) {
-        uploadRequest.fields[key] = value.toString();
-      });
-
-      uploadRequest.files.add(
-        await http.MultipartFile.fromPath('file', filePath),
-      );
-
-      final uploadStreamResponse = await uploadRequest.send();
-
-      if (uploadStreamResponse.statusCode < 200 ||
-          uploadStreamResponse.statusCode >= 300) {
-        throw Exception('Failed to upload audio file');
-      }
-    } else {
-      final bytes = await file.readAsBytes();
-      final uploadResponse = await http.put(
-        Uri.parse(uploadUrl),
-        headers: {'Content-Type': 'audio/mp4'},
-        body: bytes,
-      );
-
-      if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
-        throw Exception('Failed to upload audio file');
-      }
-    }
-
-    if (confirmRequired && confirmUrl != null && confirmUrl.isNotEmpty) {
-      if (anonKey.isEmpty) {
-        throw Exception(
-          'INSFORGE_ANON_KEY is required for upload confirmation',
-        );
-      }
-
-      final confirmResponse = await http.post(
-        Uri.parse('$appBaseUrl$confirmUrl'),
-        headers: {
-          ..._headers(contentType: 'application/json'),
-          'Authorization': 'Bearer $anonKey',
-        },
-        body: jsonEncode({
-          'size': await file.length(),
-          'contentType': 'audio/mp4',
-        }),
-      );
-
-      if (confirmResponse.statusCode < 200 ||
-          confirmResponse.statusCode >= 300) {
-        throw Exception('Failed to confirm audio upload');
-      }
+    if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
+      throw Exception('Failed to upload audio file');
     }
 
     final processResponse = await http.post(
-      Uri.parse('$functionsBaseUrl/audio-process'),
+      Uri.parse('$fastApiBaseUrl/api/meetings/process'),
       headers: _headers(contentType: 'application/json'),
       body: jsonEncode({'path': path}),
-    );
+    ).timeout(_requestTimeout);
 
     if (processResponse.statusCode != 202) {
-      throw Exception('Failed to process audio');
+      throw Exception(_extractErrorMessage(processResponse, 'Failed to process audio'));
     }
 
     final payload = jsonDecode(processResponse.body) as Map<String, dynamic>;
@@ -133,12 +85,12 @@ class ApiService {
     int limit = 8,
   }) async {
     final response = await http.get(
-      Uri.parse('$functionsBaseUrl/meetings-list?offset=$offset&limit=$limit'),
+      Uri.parse('$fastApiBaseUrl/api/v1/meetings?offset=$offset&limit=$limit'),
       headers: _headers(),
-    );
+    ).timeout(_requestTimeout);
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch meetings');
+      throw Exception(_extractErrorMessage(response, 'Failed to fetch meetings'));
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
@@ -153,12 +105,12 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getMeetingDetails(String id) async {
     final response = await http.get(
-      Uri.parse('$functionsBaseUrl/meeting-detail?id=$id'),
+      Uri.parse('$fastApiBaseUrl/api/v1/meetings/$id'),
       headers: _headers(),
-    );
+    ).timeout(_requestTimeout);
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch meeting details');
+      throw Exception(_extractErrorMessage(response, 'Failed to fetch meeting details'));
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
@@ -169,5 +121,22 @@ class ApiService {
     }
 
     return data;
+  }
+
+  static String _extractErrorMessage(http.Response response, String fallback) {
+    try {
+      final payload = jsonDecode(response.body);
+      if (payload is Map<String, dynamic>) {
+        final detail = payload['detail'];
+        if (detail is String && detail.isNotEmpty) {
+          return detail;
+        }
+        final message = payload['message'];
+        if (message is String && message.isNotEmpty) {
+          return message;
+        }
+      }
+    } catch (_) {}
+    return '$fallback (HTTP ${response.statusCode})';
   }
 }
