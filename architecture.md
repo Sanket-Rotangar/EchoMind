@@ -39,22 +39,28 @@ Endpoints:
 
 Services:
 - `meeting_backend/db_client.py` — Supabase DB + Storage interactions
-- `meeting_backend/assembly_service.py` — submit transcript jobs to AssemblyAI
-- `meeting_backend/ai_service.py` — fetch transcript + Gemini extraction + DB updates
+- `meeting_backend/assembly_service.py` — submit transcript jobs to AssemblyAI + polling fallback
+- `meeting_backend/ai_service.py` — fetch transcript + Gemini extraction + idempotent DB updates
 
 ### 3) Supabase Data Model
 
 Migration:
 - `meeting_backend/migrations/001_supabase_core.sql`
+- `meeting_backend/migrations/003_pipeline_stage_states.sql`
+- `meeting_backend/migrations/004_meeting_status_enum_compat.sql`
 
 Tables:
 - `meetings`
-  - lifecycle status: `processing`, `completed`, `failed`
-  - stores transcript linkage (`assembly_transcript_id`) and final `intelligence_data`
+  - lifecycle status: `uploaded`, `transcribing`, `transcribed`, `analyzing`, `completed`, `failed`
+  - stores transcript linkage (`assembly_transcript_id`), full `transcript_text`, final `intelligence_data`, and `failure_reason`
 - `action_items`
   - normalized task rows extracted from Gemini output
+- `meeting_state_events`
+  - append-only stage audit trail with JSON `details` per transition for debugging and retry visibility
 
-Excluded intentionally (for now): retry/attempt columns and stage state-machine complexity.
+Notes:
+- Stage transitions are persisted by backend services using `db_client.transition_meeting_state(...)`.
+- This keeps the pipeline observable and makes later retry orchestration straightforward.
 
 ## Sequence Flow
 
@@ -63,19 +69,23 @@ Excluded intentionally (for now): retry/attempt columns and stage state-machine 
 3. FastAPI creates object path and requests Supabase signed upload URL.
 4. Flutter uploads bytes directly to Supabase Storage signed URL.
 5. Flutter calls `POST /api/meetings/process` with `{ path }`.
-6. FastAPI inserts `meetings` row (`processing`) and starts background submission to AssemblyAI.
-7. AssemblyAI calls `POST /api/webhooks/assemblyai` after transcription.
-8. FastAPI fetches transcript from AssemblyAI and builds speaker text.
-9. FastAPI sends prompt to Gemini and parses strict JSON response.
-10. FastAPI updates `meetings` to `completed`, saves `intelligence_data`, and replaces `action_items`.
-11. Flutter polls/refreshes list and opens detail view.
+6. FastAPI inserts `meetings` row with state `uploaded` and starts background submission to AssemblyAI.
+7. After AssemblyAI accepts the job, backend sets state `transcribing` and stores `assembly_transcript_id`.
+8. AssemblyAI calls `POST /api/webhooks/assemblyai` after transcription.
+9. If webhook is unreachable, backend polls AssemblyAI transcript status as fallback.
+10. Backend fetches transcript, stores `transcript_text`, and sets state `transcribed`.
+11. Backend sends transcript to Gemini and sets state `analyzing`.
+12. Backend stores insights and action items, then sets state `completed`.
+13. Flutter polls/refreshes list and opens detail view.
 
 ## Error Handling (MVP)
 
 - Missing user header (`x-user-id`) returns `400`.
 - Invalid webhook secret returns `401`.
-- Any transcription/extraction failure marks meeting `failed`.
-- No retry queue is included yet by design.
+- Any transcription/extraction failure marks meeting `failed` and stores `failure_reason`.
+- Every stage transition is recorded in `meeting_state_events` for debugging.
+- Duplicate completion callbacks are handled safely (idempotent terminal-state guard).
+- Retry queue/worker is still not implemented yet, but state/event data is now in place to support it.
 
 ## Validation
 

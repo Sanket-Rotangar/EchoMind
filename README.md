@@ -1,30 +1,40 @@
-# MeetingApp — Supabase + FastAPI Pipeline
+# MeetingApp — Flutter + FastAPI + Supabase
 
-This workspace now runs on:
+This workspace runs on:
 - Flutter app (`meeting_app`)
 - FastAPI backend (`meeting_backend`)
 - Supabase (Postgres + Storage)
 - AssemblyAI (transcription)
-- Gemini (structured meeting intelligence)
+- Gemini (meeting intelligence extraction)
 
-Legacy function/runtime dependencies were removed from active code paths.
+## Pipeline State Model
+
+Meetings move through these persisted statuses:
+- `uploaded`
+- `transcribing`
+- `transcribed`
+- `analyzing`
+- `completed`
+- `failed`
+
+Each transition is stored in `meeting_state_events` for debugging and retry visibility.
 
 ## End-to-End Flow
 
 1. Flutter records audio.
-2. Flutter requests upload URL from FastAPI: `GET /api/v1/storage/upload-url`.
-3. Flutter uploads audio directly to Supabase Storage using the signed URL.
-4. Flutter starts processing: `POST /api/meetings/process` with storage `path`.
-5. FastAPI creates a meeting row (`processing`) and submits audio to AssemblyAI.
-6. AssemblyAI calls webhook: `POST /api/webhooks/assemblyai`.
-7. FastAPI fetches transcript, sends it to Gemini, writes summary + action items to Supabase.
-8. Flutter reads list/details from FastAPI:
+2. Flutter requests upload URL: `GET /api/v1/storage/upload-url`.
+3. Flutter uploads audio directly to Supabase Storage.
+4. Flutter starts processing: `POST /api/meetings/process`.
+5. Backend inserts meeting (`uploaded`) and submits to AssemblyAI (`transcribing`).
+6. Backend receives AssemblyAI webhook, or falls back to transcript polling if webhook cannot reach backend.
+7. Backend stores transcript (`transcribed`), runs Gemini (`analyzing`), and writes insights/action items (`completed`).
+8. Flutter fetches list/details:
    - `GET /api/v1/meetings`
    - `GET /api/v1/meetings/{id}`
 
-## Backend Setup
+## Environment
 
-Create `.env` at workspace root with:
+Create `.env` at workspace root:
 
 ```env
 SUPABASE_URL=...
@@ -36,8 +46,14 @@ WEBHOOK_SECRET=...
 WEBHOOK_PUBLIC_BASE_URL=http://localhost:8000
 ```
 
-Apply schema in Supabase SQL editor (or migration tooling):
-- `meeting_backend/migrations/001_supabase_core.sql`
+## Database Migrations (Supabase SQL Editor)
+
+Run in order:
+1. `meeting_backend/migrations/001_supabase_core.sql`
+2. `meeting_backend/migrations/003_pipeline_stage_states.sql`
+3. `meeting_backend/migrations/004_meeting_status_enum_compat.sql`
+
+Migration `004` handles legacy enum-based `meetings.status` setups safely.
 
 ## Run Backend
 
@@ -46,20 +62,27 @@ cd meeting_backend
 /home/sanket-rotangar/Desktop/MeetingApp/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Run Flutter App
+## Run Flutter
 
 ```bash
 cd meeting_app
 flutter run \
   --dart-define=FASTAPI_BASE_URL=http://<your-ip>:8000 \
-  --dart-define=SOORA_USER_ID=<uuid-or-user-id>
+  --dart-define=SOORA_USER_ID=<valid-users.id-uuid>
 ```
 
-## Tests
+`SOORA_USER_ID` must exist in `public.users` due to `meetings.user_id` foreign key.
+
+## Backend Tests
 
 ```bash
 cd meeting_backend
 /home/sanket-rotangar/Desktop/MeetingApp/.venv/bin/python -m unittest test_api_e2e.py test_pipeline_services.py
 ```
 
-Current status: tests pass for migrated backend APIs and pipeline services.
+## Quick Curl Smoke Test
+
+```bash
+cd meeting_backend
+USER_ID=<valid-users.id-uuid> ./test_pipeline_with_curl.sh /home/sanket-rotangar/Desktop/MeetingApp/test-audio.m4a
+```

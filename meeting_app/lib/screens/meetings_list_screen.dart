@@ -12,7 +12,8 @@ class MeetingsListScreen extends StatefulWidget {
   State<MeetingsListScreen> createState() => MeetingsListScreenState();
 }
 
-class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKeepAliveClientMixin {
+class MeetingsListScreenState extends State<MeetingsListScreen>
+    with AutomaticKeepAliveClientMixin {
   static const int _pageSize = 8;
   final List<dynamic> _meetings = [];
   int _offset = 0;
@@ -41,7 +42,10 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
     });
 
     try {
-      final freshBatch = await ApiService.getMeetings(offset: 0, limit: _pageSize);
+      final freshBatch = await ApiService.getMeetings(
+        offset: 0,
+        limit: _pageSize,
+      );
 
       if (!mounted) return;
 
@@ -70,7 +74,10 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
     });
 
     try {
-      final firstPage = await ApiService.getMeetings(offset: 0, limit: _pageSize);
+      final firstPage = await ApiService.getMeetings(
+        offset: 0,
+        limit: _pageSize,
+      );
 
       if (!mounted) return;
 
@@ -97,7 +104,10 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
     final nextOffset = _offset + _pageSize;
 
     try {
-      final nextBatch = await ApiService.getMeetings(offset: nextOffset, limit: _pageSize);
+      final nextBatch = await ApiService.getMeetings(
+        offset: nextOffset,
+        limit: _pageSize,
+      );
 
       if (!mounted) return;
 
@@ -142,7 +152,7 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
 
     final local = parsed.toLocal();
@@ -158,7 +168,33 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
   }
 
   Widget _buildStatusBadge(String status) {
-    if (status == 'processing') {
+    if (status == 'uploaded') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.blue.withOpacity(0.45)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_upload, size: 14, color: Colors.blue),
+            SizedBox(width: 6),
+            Text(
+              'Uploaded',
+              style: TextStyle(
+                color: Colors.blue,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (status == 'transcribing') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -172,8 +208,64 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
             CupertinoActivityIndicator(radius: 7),
             SizedBox(width: 8),
             Text(
-              'Processing...',
-              style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.w600, fontSize: 12),
+              'Transcribing',
+              style: TextStyle(
+                color: Colors.yellow,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (status == 'transcribed') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.orange.withOpacity(0.45)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.description_outlined, size: 14, color: Colors.orange),
+            SizedBox(width: 6),
+            Text(
+              'Transcribed',
+              style: TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (status == 'analyzing') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.purple.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.purple.withOpacity(0.45)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoActivityIndicator(radius: 7),
+            SizedBox(width: 8),
+            Text(
+              'Analyzing',
+              style: TextStyle(
+                color: Colors.purple,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -195,7 +287,11 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
             SizedBox(width: 6),
             Text(
               'Completed',
-              style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600, fontSize: 12),
+              style: TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -211,7 +307,11 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
       ),
       child: const Text(
         'Failed',
-        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 12),
+        style: TextStyle(
+          color: Colors.red,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -238,108 +338,118 @@ class MeetingsListScreenState extends State<MeetingsListScreen> with AutomaticKe
           Expanded(
             child: _isInitialLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.primaryPeach),
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryPeach,
+                    ),
                   )
                 : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Text(
-                            'Unable to load meetings: $_error',
-                            style: const TextStyle(color: AppColors.textSecondary),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      )
-                    : _meetings.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No meetings yet.',
-                              style: TextStyle(color: AppColors.textSecondary),
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Text(
+                        'Unable to load meetings: $_error',
+                        style: const TextStyle(color: AppColors.textSecondary),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                : _meetings.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No meetings yet.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _onRefresh,
+                    color: AppColors.primaryPeach,
+                    backgroundColor: AppColors.surface,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      itemCount: _meetings.length + (_hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (_hasMore && index == _meetings.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 12),
+                            child: Center(
+                              child: TextButton(
+                                onPressed: _isLoadingMore
+                                    ? null
+                                    : _loadMoreMeetings,
+                                child: Text(
+                                  _isLoadingMore
+                                      ? 'Loading...'
+                                      : 'Load older meetings...',
+                                  style: const TextStyle(
+                                    color: AppColors.primaryPeach,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
                             ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _onRefresh,
-                            color: AppColors.primaryPeach,
-                            backgroundColor: AppColors.surface,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                              itemCount: _meetings.length + (_hasMore ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (_hasMore && index == _meetings.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 8, bottom: 12),
-                                    child: Center(
-                                      child: TextButton(
-                                        onPressed: _isLoadingMore ? null : _loadMoreMeetings,
-                                        child: Text(
-                                          _isLoadingMore ? 'Loading...' : 'Load older meetings...',
-                                          style: const TextStyle(
-                                            color: AppColors.primaryPeach,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
+                          );
+                        }
+
+                        final meeting =
+                            _meetings[index] as Map<String, dynamic>;
+                        final title = (meeting['title'] ?? 'Untitled Meeting')
+                            .toString();
+                        final createdAt = meeting['created_at']?.toString();
+                        final status = (meeting['status'] ?? 'uploaded')
+                            .toString()
+                            .toLowerCase();
+                        final meetingId = meeting['id']?.toString();
+
+                        return GestureDetector(
+                          onTap: meetingId != null
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          SummaryScreen(meetingId: meetingId),
                                     ),
                                   );
                                 }
-
-                                final meeting = _meetings[index] as Map<String, dynamic>;
-                                final title = (meeting['title'] ?? 'Untitled Meeting').toString();
-                                final createdAt = meeting['created_at']?.toString();
-                                final status = (meeting['status'] ?? 'processing').toString().toLowerCase();
-                                final meetingId = meeting['id']?.toString();
-                                final isCompleted = status == 'completed';
-
-                                return GestureDetector(
-                                  onTap: isCompleted && meetingId != null
-                                      ? () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => SummaryScreen(meetingId: meetingId),
-                                            ),
-                                          );
-                                        }
-                                      : null,
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.surface,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: AppColors.border),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          title,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          _formatDate(createdAt),
-                                          style: const TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        _buildStatusBadge(status),
-                                      ],
-                                    ),
+                              : null,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                );
-                              },
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _formatDate(createdAt),
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _buildStatusBadge(status),
+                              ],
                             ),
                           ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),

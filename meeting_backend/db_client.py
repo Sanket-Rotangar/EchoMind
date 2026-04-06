@@ -63,7 +63,7 @@ async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
     payload = {
         "user_id": user_id,
         "title": "Processing Meeting...",
-        "status": "processing",
+        "status": "uploaded",
         "audio_storage_path": path,
     }
 
@@ -75,6 +75,13 @@ async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
         )
 
         if response.status_code >= 400:
+            logger.error(
+                "[DB] insert meeting failed user=%s path=%s status=%s response=%s",
+                user_id,
+                path,
+                response.status_code,
+                response.text,
+            )
             body_text = response.text
             if response.status_code == 409 or "23505" in body_text or "unique_user_audio_path" in body_text:
                 logger.warning(f"[DB] duplicate meeting detected user={user_id} path={path}, returning existing row")
@@ -93,6 +100,52 @@ async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
             raise RuntimeError("Failed to create meeting row")
         logger.info(f"[DB] insert meeting success id={rows[0].get('id')}")
         return rows[0]
+
+
+async def insert_meeting_event(meeting_id: str, stage: str, details: Dict[str, Any] | None = None):
+    payload = {
+        "meeting_id": meeting_id,
+        "stage": stage,
+        "details": details or {},
+    }
+    url = _postgrest_url("meeting_state_events")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            url,
+            headers=_supabase_headers(prefer="return=minimal"),
+            json=payload,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] insert meeting event failed meeting=%s stage=%s status=%s response=%s",
+                meeting_id,
+                stage,
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        logger.info("[DB] meeting event inserted meeting=%s stage=%s", meeting_id, stage)
+
+
+async def transition_meeting_state(
+    meeting_id: str,
+    status: str,
+    details: Dict[str, Any] | None = None,
+    extra_updates: Dict[str, Any] | None = None,
+):
+    logger.info(
+        "[PIPELINE][STATE] transition-start meeting=%s status=%s detailsKeys=%s updateKeys=%s",
+        meeting_id,
+        status,
+        sorted(list((details or {}).keys())),
+        sorted(list((extra_updates or {}).keys())),
+    )
+    payload = {"status": status}
+    if extra_updates:
+        payload.update(extra_updates)
+    await update_meeting(meeting_id, payload)
+    await insert_meeting_event(meeting_id, status, details)
+    logger.info("[PIPELINE][STATE] transition-done meeting=%s status=%s", meeting_id, status)
 
 
 async def update_meeting(meeting_id: str, payload: Dict[str, Any]):
@@ -186,7 +239,21 @@ async def get_meetings(user_id: str, limit: int = 8, offset: int = 0) -> List[Di
 async def get_meeting_detail(user_id: str, meeting_id: str) -> Dict[str, Any]:
     logger.info(f"[DB] meeting detail user={user_id} meeting={meeting_id}")
     url = _postgrest_url(
-        f"meetings?id=eq.{quote(meeting_id, safe='')}&user_id=eq.{quote(user_id, safe='')}&select=*,action_items(*)&limit=1"
+        f"meetings?id=eq.{quote(meeting_id, safe='')}&user_id=eq.{quote(user_id, safe='')}&select=*,action_items(*),meeting_state_events(*)&limit=1"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=_supabase_headers())
+        response.raise_for_status()
+        rows = response.json() or []
+        if not rows:
+            return {}
+        return rows[0]
+
+
+async def get_meeting_by_id(meeting_id: str) -> Dict[str, Any]:
+    logger.info(f"[DB] meeting by id meeting={meeting_id}")
+    url = _postgrest_url(
+        f"meetings?id=eq.{quote(meeting_id, safe='')}&select=*&limit=1"
     )
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url, headers=_supabase_headers())

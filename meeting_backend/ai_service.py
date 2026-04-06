@@ -10,10 +10,24 @@ genai.configure(api_key=config.GEMINI_API_KEY)
 
 async def extract_insights_task(meeting_id: str, transcript_id: str, status: str, webhook_payload: dict):
     logger.info(f"[PIPELINE][GEMINI] start meeting={meeting_id} transcript={transcript_id} status={status}")
+
+    meeting = await db_client.get_meeting_by_id(meeting_id)
+    if meeting and meeting.get("status") in {"completed", "failed"}:
+        logger.info(
+            "[PIPELINE][GEMINI] skip meeting=%s reason=terminal-status status=%s",
+            meeting_id,
+            meeting.get("status"),
+        )
+        return
     
     if status == "error":
         logger.error(f"[PIPELINE][GEMINI] webhook status error meeting={meeting_id}")
-        await db_client.update_meeting(meeting_id, {"status": "failed"})
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "failed",
+            details={"stage": "assembly_webhook", "webhook_payload": webhook_payload},
+            extra_updates={"failure_reason": "assembly_webhook:error"},
+        )
         return
         
     try:
@@ -25,12 +39,22 @@ async def extract_insights_task(meeting_id: str, transcript_id: str, status: str
             logger.info(f"[PIPELINE][GEMINI] transcript-fetched meeting={meeting_id} assemblyStatus={transcript_data.get('status')}")
             
         if transcript_data.get("status") == "error":
-            await db_client.update_meeting(meeting_id, {"status": "failed"})
+            await db_client.transition_meeting_state(
+                meeting_id,
+                "failed",
+                details={"stage": "assembly_fetch", "assembly_status": "error", "transcript_id": transcript_id},
+                extra_updates={"failure_reason": "assembly_fetch:error"},
+            )
             return
             
         if transcript_data.get("status") != "completed":
             logger.error(f"Unexpected transcript status for {meeting_id}: {transcript_data.get('status')}")
-            await db_client.update_meeting(meeting_id, {"status": "failed"})
+            await db_client.transition_meeting_state(
+                meeting_id,
+                "failed",
+                details={"stage": "assembly_fetch", "assembly_status": transcript_data.get("status"), "transcript_id": transcript_id},
+                extra_updates={"failure_reason": f"assembly_fetch:unexpected_status:{transcript_data.get('status')}"},
+            )
             return
             
         utterances = transcript_data.get("utterances", [])
@@ -41,6 +65,19 @@ async def extract_insights_task(meeting_id: str, transcript_id: str, status: str
             
         transcript_text = "\n".join(transcript_lines)
         logger.info(f"[PIPELINE][GEMINI] transcript-ready meeting={meeting_id} lines={len(transcript_lines)}")
+
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "transcribed",
+            details={"transcript_id": transcript_id, "line_count": len(transcript_lines)},
+            extra_updates={"transcript_text": transcript_text},
+        )
+
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "analyzing",
+            details={"model": "gemini-2.5-flash", "transcript_id": transcript_id},
+        )
         
         model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""
@@ -82,11 +119,15 @@ async def extract_insights_task(meeting_id: str, transcript_id: str, status: str
         if len(title_str) > 40:
             title_str = title_str[:40] + "..."
             
-        await db_client.update_meeting(meeting_id, {
-            "title": title_str,
-            "status": "completed",
-            "intelligence_data": insights
-        })
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "completed",
+            details={"transcript_id": transcript_id, "action_item_count": len(insights.get("action_matrix", []))},
+            extra_updates={
+                "title": title_str,
+                "intelligence_data": insights,
+            },
+        )
         logger.info(f"[PIPELINE][GEMINI] meeting-completed meeting={meeting_id}")
         
         actions = insights.get("action_matrix", [])
@@ -108,4 +149,9 @@ async def extract_insights_task(meeting_id: str, transcript_id: str, status: str
         logger.info(f"[PIPELINE][GEMINI] success meeting={meeting_id}")
     except Exception as e:
         logger.error(f"[PIPELINE][GEMINI] failed meeting={meeting_id} error={e}")
-        await db_client.update_meeting(meeting_id, {"status": "failed"})
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "failed",
+            details={"stage": "gemini_analyze", "error": str(e), "transcript_id": transcript_id},
+            extra_updates={"failure_reason": f"gemini_analyze: {e}"},
+        )

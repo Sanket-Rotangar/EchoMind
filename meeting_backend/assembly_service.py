@@ -1,10 +1,63 @@
 import httpx
 import db_client
 import config
+import ai_service
 from urllib.parse import urlencode
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
+
+
+async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str):
+    max_attempts = 36
+    interval_seconds = 10
+
+    async with httpx.AsyncClient() as client:
+        headers = {"authorization": config.ASSEMBLYAI_API_KEY}
+        for attempt in range(1, max_attempts + 1):
+            meeting = await db_client.get_meeting_by_id(meeting_id)
+            current_status = (meeting or {}).get("status")
+            if current_status and current_status != "transcribing":
+                logger.info(
+                    "[PIPELINE][ASSEMBLY] poll-exit meeting=%s reason=status-changed status=%s",
+                    meeting_id,
+                    current_status,
+                )
+                return
+
+            resp = await client.get(
+                f"https://api.assemblyai.com/v2/transcript/{transcript_id}",
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            assembly_status = data.get("status")
+            logger.info(
+                "[PIPELINE][ASSEMBLY] poll meeting=%s transcript=%s attempt=%s status=%s",
+                meeting_id,
+                transcript_id,
+                attempt,
+                assembly_status,
+            )
+
+            if assembly_status in {"completed", "error"}:
+                await ai_service.extract_insights_task(
+                    meeting_id,
+                    transcript_id,
+                    assembly_status,
+                    {"source": "assembly_poll", "attempt": attempt},
+                )
+                return
+
+            await asyncio.sleep(interval_seconds)
+
+    logger.warning(
+        "[PIPELINE][ASSEMBLY] poll-timeout meeting=%s transcript=%s attempts=%s",
+        meeting_id,
+        transcript_id,
+        max_attempts,
+    )
 
 async def process_audio_task(meeting_id: str, audio_path: str):
     logger.info(f"[PIPELINE][ASSEMBLY] start meeting={meeting_id} path={audio_path}")
@@ -40,20 +93,25 @@ async def process_audio_task(meeting_id: str, audio_path: str):
             data = resp.json()
             logger.info(f"[PIPELINE][ASSEMBLY] transcript-submitted meeting={meeting_id} transcript={data.get('id')}")
             
-        try:
-            await db_client.update_meeting(meeting_id, {
-                "assembly_transcript_id": data["id"],
-                "status": "processing"
-            })
-        except Exception as update_error:
-            logger.warning(
-                "[PIPELINE][ASSEMBLY] meeting update with transcript_id failed meeting=%s error=%s; retrying status-only update",
-                meeting_id,
-                update_error,
-            )
-            await db_client.update_meeting(meeting_id, {"status": "processing"})
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "transcribing",
+            details={
+                "audio_path": audio_path,
+                "assembly_transcript_id": data.get("id"),
+                "webhook_url": webhook_url,
+            },
+            extra_updates={"assembly_transcript_id": data["id"]},
+        )
+
+        await _poll_for_transcript_completion(meeting_id, data["id"])
         
         logger.info(f"[PIPELINE][ASSEMBLY] queued meeting={meeting_id}")
     except Exception as e:
         logger.error(f"[PIPELINE][ASSEMBLY] failed meeting={meeting_id} error={e}")
-        await db_client.update_meeting(meeting_id, {"status": "failed"})
+        await db_client.transition_meeting_state(
+            meeting_id,
+            "failed",
+            details={"stage": "assembly_submit", "error": str(e)},
+            extra_updates={"failure_reason": f"assembly_submit: {e}"},
+        )
