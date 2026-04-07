@@ -1,5 +1,9 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+
+import '../core/call_recording_service.dart';
 import '../core/theme.dart';
 import 'chat_screen.dart';
 import 'home_record_screen.dart';
@@ -17,6 +21,34 @@ class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
   final GlobalKey<MeetingsListScreenState> _meetingsKey =
       GlobalKey<MeetingsListScreenState>();
+  final CallRecordingService _callRecordingService = CallRecordingService();
+  StreamSubscription? _overlayDataSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupOverlayListener();
+  }
+
+  @override
+  void dispose() {
+    _overlayDataSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _setupOverlayListener() {
+    // Listen for messages from the overlay window
+    _overlayDataSubscription = FlutterOverlayWindow.overlayListener.listen((data) {
+      if (data is Map) {
+        final action = data['action'];
+        if (action == 'start_recording') {
+          _callRecordingService.startRecording();
+        } else if (action == 'stop_recording') {
+          _callRecordingService.stopRecording();
+        }
+      }
+    });
+  }
 
   void _handleUploadComplete() {
     setState(() {

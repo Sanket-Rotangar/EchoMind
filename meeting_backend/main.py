@@ -222,6 +222,79 @@ async def google_auth(request: Request):
     }
 
 
+@app.post("/auth/google/extension")
+async def google_auth_extension(request: Request):
+    """Authenticate with Google access token from Chrome extension.
+
+    Chrome extensions use OAuth implicit flow which returns an access token,
+    not an ID token. We verify the access token by calling Google's tokeninfo
+    endpoint and then get user info.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    access_token = body.get("access_token")
+    email = body.get("email")
+    name = body.get("name")
+    google_id = body.get("google_id")
+    picture = body.get("picture")
+
+    if not access_token or not email:
+        raise HTTPException(
+            status_code=400, detail="access_token and email are required"
+        )
+
+    # Verify the access token with Google
+    import httpx
+
+    async with httpx.AsyncClient() as client:
+        try:
+            token_response = await client.get(
+                f"https://www.googleapis.com/oauth2/v3/tokeninfo?access_token={access_token}"
+            )
+            if token_response.status_code != 200:
+                raise HTTPException(
+                    status_code=401, detail="Invalid Google access token"
+                )
+
+            token_info = token_response.json()
+
+            # Verify the email matches
+            if token_info.get("email") != email:
+                raise HTTPException(status_code=401, detail="Email mismatch in token")
+
+        except httpx.RequestError:
+            raise HTTPException(status_code=401, detail="Failed to verify Google token")
+
+    # Get or create user in database
+    user = await db_client.get_or_create_user(
+        email=email,
+        name=name,
+        google_id=google_id,
+        picture_url=picture,
+    )
+
+    # Create JWT token
+    jwt_token = auth_service.create_jwt_token(user["id"], user["email"])
+
+    logger.info(
+        f"[AUTH] Google extension auth success user={user['id']} email={user['email']}"
+    )
+
+    return {
+        "success": True,
+        "access_token": jwt_token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user.get("name"),
+            "calendar_connected": user.get("calendar_connected", False),
+        },
+    }
+
+
 @app.get("/api/v1/user/profile")
 async def get_user_profile(
     request: Request,

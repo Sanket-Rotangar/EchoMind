@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EchoMind Settings</title>
+  <link rel="stylesheet" href="css/options.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <img src="icons/icon48.png" alt="EchoMind" class="logo">
+      <div>
+        <h1>EchoMind Settings</h1>
+        <p class="subtitle">Configure your recording preferences</p>
+      </div>
+    </header>
+
+    <!-- Permissions Section (NEW) -->
+    <section class="section permissions-section">
+      <h2>Required Permissions</h2>
+      <p class="section-description">EchoMind needs these permissions to record meetings properly.</p>
+      
+      <div class="permission-item">
+        <div class="permission-info">
+          <div class="permission-header">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+            <span class="permission-name">Microphone Access</span>
+          </div>
+          <p class="permission-description">Required to capture your voice during meetings</p>
+        </div>
+        <div class="permission-status">
+          <span id="mic-permission-status" class="status-badge pending">Checking...</span>
+          <button id="request-mic-permission" class="btn btn-primary btn-small">Grant Access</button>
+        </div>
+      </div>
+
+      <div class="permission-item">
+        <div class="permission-info">
+          <div class="permission-header">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM9 8h2v8H9zm4 2h2v6h-2z"/>
+            </svg>
+            <span class="permission-name">Tab Audio Capture</span>
+          </div>
+          <p class="permission-description">Captures meeting audio from browser tabs (Google Meet, Zoom, etc.)</p>
+        </div>
+        <div class="permission-status">
+          <span class="status-badge granted">Auto-granted</span>
+        </div>
+      </div>
+
+      <div class="permission-item">
+        <div class="permission-info">
+          <div class="permission-header">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+            </svg>
+            <span class="permission-name">Storage</span>
+          </div>
+          <p class="permission-description">Saves your settings and authentication locally</p>
+        </div>
+        <div class="permission-status">
+          <span class="status-badge granted">Auto-granted</span>
+        </div>
+      </div>
+
+      <div class="permission-item">
+        <div class="permission-info">
+          <div class="permission-header">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <span class="permission-name">Notifications</span>
+          </div>
+          <p class="permission-description">Shows alerts when recording completes or uploads finish</p>
+        </div>
+        <div class="permission-status">
+          <span id="notif-permission-status" class="status-badge pending">Checking...</span>
+          <button id="request-notif-permission" class="btn btn-secondary btn-small">Enable</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Audio Devices Section -->
+    <section class="section">
+      <h2>Audio Devices</h2>
+      
+      <div class="form-group">
+        <label for="input-device">Microphone (Your Voice)</label>
+        <select id="input-device">
+          <option value="default">Default Microphone</option>
+        </select>
+        <p class="hint">Select the microphone to capture your voice during meetings</p>
+      </div>
+
+      <div class="form-group">
+        <label for="output-device">System Audio</label>
+        <select id="output-device">
+          <option value="default">Default Output</option>
+        </select>
+        <p class="hint">The browser will capture audio from the tab automatically</p>
+      </div>
+
+      <button id="refresh-devices" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+        Refresh Devices
+      </button>
+    </section>
+
+    <!-- Backend Section -->
+    <section class="section">
+      <h2>Backend Connection</h2>
+      
+      <div class="form-group">
+        <label for="backend-url">Backend URL</label>
+        <input type="url" id="backend-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+        <p class="hint">URL of your EchoMind backend server</p>
+      </div>
+
+      <div class="connection-status" id="connection-status">
+        <span class="status-dot"></span>
+        <span class="status-text">Checking connection...</span>
+      </div>
+
+      <button id="test-connection" class="btn btn-secondary">Test Connection</button>
+    </section>
+
+    <!-- Recording Settings -->
+    <section class="section">
+      <h2>Recording Settings</h2>
+      
+      <div class="form-group toggle-group">
+        <label for="auto-upload">
+          <span>Auto-upload recordings</span>
+          <p class="hint">Automatically upload recordings when stopped</p>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="auto-upload" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button id="save-settings" class="btn btn-primary">Save Settings</button>
+      <button id="reset-settings" class="btn btn-secondary">Reset to Defaults</button>
+    </div>
+
+    <!-- Status Message -->
+    <div id="status-message" class="status-message hidden"></div>
+  </div>
+
+  <script src="js/options.js"></script>
+</body>
+</html>

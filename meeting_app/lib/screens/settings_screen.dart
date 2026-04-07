@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../core/api_service.dart';
 import '../core/auth_service.dart';
+// COMMENTED OUT - Call recording feature disabled due to Android limitations
+// import '../core/call_recording_service.dart';
 import '../core/theme.dart';
 import 'login_screen.dart';
 
@@ -16,15 +19,22 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   final AuthService _authService = AuthService();
+  // COMMENTED OUT - Call recording feature disabled due to Android limitations
+  // final CallRecordingService _callRecordingService = CallRecordingService();
   bool _isConnectingCalendar = false;
   bool _isDisconnectingCalendar = false;
+  // COMMENTED OUT - Call recording feature disabled
+  // bool _pendingCallRecordingEnable = false; // Track if we're waiting for permission
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _authService.addListener(_onAuthChange);
+    // COMMENTED OUT - Call recording feature disabled
+    // _callRecordingService.addListener(_onCallRecordingChange);
     
     // Set up callback for OAuth completion via deep link
     _authService.onCalendarOAuthComplete = _onCalendarOAuthComplete;
@@ -32,14 +42,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authService.removeListener(_onAuthChange);
+    // COMMENTED OUT - Call recording feature disabled
+    // _callRecordingService.removeListener(_onCallRecordingChange);
     _authService.onCalendarOAuthComplete = null;
     super.dispose();
   }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // COMMENTED OUT - Call recording feature disabled
+    // When app resumes (user returns from settings), re-check permissions
+    // if (state == AppLifecycleState.resumed && _pendingCallRecordingEnable) {
+    //   _checkCallRecordingPermissions();
+    // }
+  }
+  
+  // COMMENTED OUT - Call recording feature disabled
+  // Future<void> _checkCallRecordingPermissions() async {
+  //   final allGranted = await _callRecordingService.checkPermissions();
+  //   debugPrint('Checking call recording permissions after resume: $allGranted');
+  //   
+  //   if (allGranted) {
+  //     _pendingCallRecordingEnable = false;
+  //     await _callRecordingService.refreshPermissionsAndEnable();
+  //     
+  //     if (mounted && _callRecordingService.isEnabled) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         const SnackBar(
+  //           content: Text('Call recording enabled!'),
+  //           backgroundColor: Colors.green,
+  //         ),
+  //       );
+  //     }
+  //   }
+  // }
 
   void _onAuthChange() {
     if (mounted) setState(() {});
   }
+
+  // COMMENTED OUT - Call recording feature disabled
+  // void _onCallRecordingChange() {
+  //   if (mounted) setState(() {});
+  // }
   
   void _onCalendarOAuthComplete(bool success, String? error) {
     if (!mounted) return;
@@ -382,6 +431,310 @@ class _SettingsScreenState extends State<SettingsScreen> {
             
             const SizedBox(height: 16),
             
+            // COMMENTED OUT - Call recording feature disabled due to Android limitations
+            // Call Recording Section
+            /*
+            _buildSectionCard(
+              title: 'Call Recording',
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: _callRecordingService.isEnabled
+                              ? AppColors.primaryPeach.withOpacity(0.15)
+                              : AppColors.border,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.phone_in_talk,
+                          color: _callRecordingService.isEnabled
+                              ? AppColors.primaryPeach
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Record Phone Calls',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _callRecordingService.isEnabled
+                                  ? 'Popup will appear during calls'
+                                  : 'Show recording popup on calls',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _callRecordingService.isEnabled,
+                        activeColor: AppColors.primaryPeach,
+                        onChanged: (value) async {
+                          if (value) {
+                            // Trying to enable - set flag so we check permissions on resume
+                            _pendingCallRecordingEnable = true;
+                          }
+                          
+                          await _callRecordingService.setEnabled(value);
+                          
+                          if (!_callRecordingService.isEnabled && value) {
+                            // Permission was denied or user sent to settings
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please grant overlay permission and return to the app'),
+                                  backgroundColor: Colors.orange,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                            }
+                          } else if (_callRecordingService.isEnabled && value) {
+                            // Successfully enabled
+                            _pendingCallRecordingEnable = false;
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Call recording enabled!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } else if (!value) {
+                            // User disabled it
+                            _pendingCallRecordingEnable = false;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (_callRecordingService.isEnabled) ...[
+                    const SizedBox(height: 16),
+                    const Divider(color: AppColors.border),
+                    const SizedBox(height: 12),
+                    
+                    // Recording Mode Selection
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Recording Mode',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Microphone Only Option
+                    _buildRecordingModeOption(
+                      title: 'Microphone Only',
+                      subtitle: 'Records your voice only',
+                      icon: Icons.mic,
+                      isSelected: _callRecordingService.recordingMode == RecordingMode.microphoneOnly,
+                      onTap: () => _callRecordingService.setRecordingMode(RecordingMode.microphoneOnly),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Both Sides Option (requires accessibility)
+                    _buildRecordingModeOption(
+                      title: 'Both Sides',
+                      subtitle: _callRecordingService.isAndroid10OrHigher
+                          ? 'Records both parties (Android 10+)'
+                          : 'Requires Android 10 or higher',
+                      icon: Icons.people,
+                      isSelected: _callRecordingService.recordingMode == RecordingMode.systemAudio,
+                      isEnabled: _callRecordingService.isAndroid10OrHigher,
+                      onTap: () {
+                        if (_callRecordingService.isAndroid10OrHigher) {
+                          _callRecordingService.setRecordingMode(RecordingMode.systemAudio);
+                        }
+                      },
+                    ),
+                    
+                    // Accessibility Service Setup (for Both Sides mode)
+                    if (_callRecordingService.recordingMode == RecordingMode.systemAudio &&
+                        _callRecordingService.isAndroid10OrHigher) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _callRecordingService.isAccessibilityEnabled
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _callRecordingService.isAccessibilityEnabled
+                                ? Colors.green.withOpacity(0.3)
+                                : Colors.orange.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  _callRecordingService.isAccessibilityEnabled
+                                      ? Icons.check_circle
+                                      : Icons.warning_amber_rounded,
+                                  color: _callRecordingService.isAccessibilityEnabled
+                                      ? Colors.green
+                                      : Colors.orange,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _callRecordingService.isAccessibilityEnabled
+                                        ? 'Accessibility Service Enabled'
+                                        : 'Accessibility Service Required',
+                                    style: TextStyle(
+                                      color: _callRecordingService.isAccessibilityEnabled
+                                          ? Colors.green
+                                          : Colors.orange,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!_callRecordingService.isAccessibilityEnabled) ...[
+                              const SizedBox(height: 10),
+                              const Text(
+                                'To record both sides of the call, enable the EchoMind Accessibility Service in your device settings.',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    await _callRecordingService.openAccessibilitySettings();
+                                    // Wait a bit and then refresh the status
+                                    await Future.delayed(const Duration(seconds: 1));
+                                    await _callRecordingService.refreshAccessibilityStatus();
+                                  },
+                                  icon: const Icon(Icons.settings, size: 18),
+                                  label: const Text('Open Accessibility Settings'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryPeach.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.primaryPeach.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: AppColors.primaryPeach.withOpacity(0.8),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'A floating button will appear when you make or receive calls. Tap it to start recording.',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            */
+            
+            // Replacing Call Recording section with a notice
+            _buildSectionCard(
+              title: 'Call Recording',
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.phone_in_talk,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Not Available',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Call recording is blocked by Android security policies on this device',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
             // Preferences
             _buildSectionCard(
               title: 'Preferences',
@@ -492,6 +845,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  // COMMENTED OUT - Call recording feature disabled due to Android limitations
+  /*
+  Widget _buildRecordingModeOption({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isSelected,
+    bool isEnabled = true,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: isEnabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primaryPeach.withOpacity(0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primaryPeach
+                : AppColors.border,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primaryPeach.withOpacity(0.2)
+                    : AppColors.border,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                color: isEnabled
+                    ? (isSelected ? AppColors.primaryPeach : AppColors.textSecondary)
+                    : AppColors.textSecondary.withOpacity(0.5),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isEnabled
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary.withOpacity(0.5),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isEnabled
+                          ? AppColors.textSecondary
+                          : AppColors.textSecondary.withOpacity(0.5),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: AppColors.primaryPeach,
+                size: 22,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  */
 }
 
 class _SwitchTile extends StatefulWidget {

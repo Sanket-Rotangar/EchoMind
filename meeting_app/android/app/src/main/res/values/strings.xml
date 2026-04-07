@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EchoMind</string>
+    <string name="accessibility_service_description">EchoMind uses this service to capture audio during phone calls. This allows recording both sides of the conversation for transcription and summarization.</string>
+</resources>

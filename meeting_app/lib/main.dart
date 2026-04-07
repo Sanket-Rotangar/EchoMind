@@ -2,9 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/auth_service.dart';
+// COMMENTED OUT - Call recording feature disabled due to Android limitations
+// import 'core/call_recording_service.dart';
 import 'core/theme.dart';
+// COMMENTED OUT - Call recording feature disabled
+// import 'screens/call_recording_overlay.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_layout.dart';
+
+// COMMENTED OUT - Call recording feature disabled due to Android limitations
+// Entry point for the overlay window (runs in separate isolate)
+// @pragma("vm:entry-point")
+// void overlayMain() {
+//   WidgetsFlutterBinding.ensureInitialized();
+//   runApp(const CallRecordingOverlayApp());
+// }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +32,10 @@ void main() async {
 
   // Initialize auth service
   await AuthService().init();
+  
+  // COMMENTED OUT - Call recording feature disabled due to Android limitations
+  // Initialize call recording service
+  // await CallRecordingService().init();
 
   runApp(const SmartMeetingApp());
 }

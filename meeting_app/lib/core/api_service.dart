@@ -43,11 +43,21 @@ class ApiService {
     }
 
     final file = File(filePath);
+    
+    // Determine content type based on file extension
+    String contentType = 'audio/mp4'; // default
+    if (filePath.endsWith('.wav')) {
+      contentType = 'audio/wav';
+    } else if (filePath.endsWith('.m4a')) {
+      contentType = 'audio/mp4';
+    } else if (filePath.endsWith('.mp3')) {
+      contentType = 'audio/mpeg';
+    }
 
     final bytes = await file.readAsBytes();
     final uploadResponse = await http.put(
       Uri.parse(uploadUrl),
-      headers: {'Content-Type': 'audio/mp4'},
+      headers: {'Content-Type': contentType},
       body: bytes,
     ).timeout(_requestTimeout);
 
