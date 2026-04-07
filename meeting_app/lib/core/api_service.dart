@@ -142,6 +142,21 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> sendChatMessage(String message) async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/api/v1/chat'),
+      headers: _headers(contentType: 'application/json'),
+      body: jsonEncode({'message': message}),
+    ).timeout(const Duration(seconds: 60)); // Longer timeout for AI responses
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Chat request failed'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload;
+  }
+
   static String _extractErrorMessage(http.Response response, String fallback) {
     try {
       final payload = jsonDecode(response.body);

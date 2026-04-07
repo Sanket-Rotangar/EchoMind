@@ -462,3 +462,17 @@ async def create_user_with_password(
             raise RuntimeError("Failed to create user")
         logger.info(f"[DB] user with password created id={rows[0].get('id')}")
         return rows[0]
+
+
+async def get_all_meetings_for_chat(user_id: str) -> List[Dict[str, Any]]:
+    """Get all completed meetings for a user with full context for RAG chat."""
+    logger.info(f"[DB] get all meetings for chat user={user_id}")
+    url = _postgrest_url(
+        f"meetings?user_id=eq.{quote(user_id, safe='')}&status=eq.completed&select=id,title,created_at,transcript_text,intelligence_data&order=created_at.desc&limit=50"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=_supabase_headers())
+        response.raise_for_status()
+        meetings = response.json() or []
+        logger.info(f"[DB] chat context loaded user={user_id} meetings={len(meetings)}")
+        return meetings

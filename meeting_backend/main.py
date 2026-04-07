@@ -599,6 +599,175 @@ async def assemblyai_webhook(request: Request, background_tasks: BackgroundTasks
     return {"success": True, "message": "Webhook received"}
 
 
+# ============ Chat Assistant Endpoint ============
+
+
+@app.post("/api/v1/chat")
+async def chat_with_meetings(
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """
+    RAG-based chat endpoint that answers questions about user's meetings.
+    Uses all completed meetings as context to answer time-aware questions.
+    """
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    message = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    logger.info(f"[CHAT] user={user_id} message_length={len(message)}")
+
+    try:
+        # Get all completed meetings for this user with full details
+        meetings_context = await db_client.get_all_meetings_for_chat(user_id)
+
+        if not meetings_context:
+            return {
+                "success": True,
+                "response": "You don't have any completed meetings yet. Record your first meeting and I'll be able to help you with questions about it!",
+                "meetings_searched": 0,
+            }
+
+        # Build context from meetings
+        context_parts = []
+        for meeting in meetings_context:
+            meeting_date = meeting.get("created_at", "Unknown date")
+            title = meeting.get("title", "Untitled Meeting")
+            transcript = meeting.get("transcript_text", "")
+            intelligence = meeting.get("intelligence_data", {})
+
+            meeting_context = f"""
+=== MEETING: {title} ===
+Date: {meeting_date}
+"""
+            if intelligence:
+                if intelligence.get("bottom_line"):
+                    meeting_context += f"Summary: {intelligence.get('bottom_line')}\n"
+                if intelligence.get("decisions_register"):
+                    meeting_context += f"Decisions Made: {', '.join(intelligence.get('decisions_register', []))}\n"
+                if intelligence.get("action_matrix"):
+                    actions = intelligence.get("action_matrix", [])
+                    action_strs = []
+                    for a in actions:
+                        if isinstance(a, dict):
+                            action_str = f"- {a.get('assignee', 'Unknown')}: {a.get('task', 'No task')}"
+                            if a.get("deadline"):
+                                action_str += f" (Due: {a.get('deadline')})"
+                            action_strs.append(action_str)
+                    if action_strs:
+                        meeting_context += (
+                            f"Action Items:\n" + "\n".join(action_strs) + "\n"
+                        )
+                if intelligence.get("risks_and_blockers"):
+                    meeting_context += f"Risks/Blockers: {', '.join(intelligence.get('risks_and_blockers', []))}\n"
+                if intelligence.get("key_metrics"):
+                    meeting_context += f"Key Metrics: {', '.join(intelligence.get('key_metrics', []))}\n"
+
+            if transcript:
+                # Limit transcript length to avoid token limits
+                max_transcript_len = 2000
+                if len(transcript) > max_transcript_len:
+                    transcript = (
+                        transcript[:max_transcript_len] + "... [transcript truncated]"
+                    )
+                meeting_context += f"\nTranscript Excerpt:\n{transcript}\n"
+
+            context_parts.append(meeting_context)
+
+        full_context = "\n\n".join(context_parts)
+
+        # Get current date/time for time-aware responses
+        current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+
+        # Build the prompt for Gemini
+        prompt = f"""You are EchoMind Assistant - a concise, helpful AI that answers questions about the user's meetings.
+
+CURRENT DATE/TIME: {current_datetime}
+
+MEETING DATA:
+{full_context}
+
+RESPONSE RULES:
+1. Be CONCISE - give the key info in 2-4 sentences max for simple questions
+2. Only use info from the meetings above - never make things up
+3. Understand time references (yesterday, last week, etc.) relative to current date
+4. If info isn't found, say so briefly
+
+FORMATTING RULES (STRICT):
+- NEVER use #, *, or any markdown symbols
+- For section headers, just write the title followed by a colon on its own line
+- Use dash bullets (- ) for lists, keep each item to one line
+- Put the most important answer FIRST, then details
+- Maximum 3-5 bullet points per section
+- No need for headers if the answer is simple (1-2 sentences)
+
+GOOD RESPONSE EXAMPLES:
+
+Simple question example:
+Your next meeting with John is on Friday at 2pm, scheduled during your March 15th call.
+
+Question needing detail example:
+You have 3 pending action items:
+- Budget report due Friday (assigned to you)
+- Client proposal draft due next Monday
+- Team sync scheduling in progress
+
+Multi-topic example:
+Marketing Campaign Discussion (March 15th):
+- Decided to launch in Q2
+- Budget approved at $50k
+- Sarah leading creative
+
+Next Steps:
+- Review designs by Friday
+- Schedule vendor calls
+
+BAD (never do this):
+# Heading
+## Subheading  
+**bold text**
+*italic*
+* bullet with asterisk
+
+USER QUESTION: {message}
+
+Give a clear, scannable answer:"""
+
+        # Call Gemini
+        import google.generativeai as genai
+
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+
+        assistant_response = (
+            response.text.strip()
+            if response.text
+            else "I couldn't generate a response. Please try again."
+        )
+
+        logger.info(
+            f"[CHAT] success user={user_id} meetings_searched={len(meetings_context)}"
+        )
+
+        return {
+            "success": True,
+            "response": assistant_response,
+            "meetings_searched": len(meetings_context),
+        }
+
+    except Exception as e:
+        logger.error(f"[CHAT] failed user={user_id} error={e}")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
 

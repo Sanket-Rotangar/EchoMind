@@ -324,14 +324,50 @@ class MeetingsListScreenState extends State<MeetingsListScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // App Logo Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'EchoMind',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
             child: Text(
               'Your Meetings',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Text(
+              'All your recorded meetings and summaries',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 14,
               ),
             ),
           ),
@@ -420,29 +456,45 @@ class MeetingsListScreenState extends State<MeetingsListScreen>
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: AppColors.border),
                             ),
-                            child: Column(
+                            child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _formatDate(createdAt),
+                                        style: const TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildStatusBadge(status),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _formatDate(createdAt),
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 13,
+                                const SizedBox(width: 8),
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Icon(
+                                    Icons.chevron_right,
+                                    color: AppColors.textSecondary.withOpacity(0.5),
+                                    size: 20,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
-                                _buildStatusBadge(status),
                               ],
                             ),
                           ),

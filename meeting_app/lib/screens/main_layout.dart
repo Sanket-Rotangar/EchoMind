@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import 'chat_screen.dart';
 import 'home_record_screen.dart';
 import 'meetings_list_screen.dart';
 import 'settings_screen.dart';
@@ -30,6 +31,7 @@ class _MainLayoutState extends State<MainLayout> {
     final screens = [
       HomeRecordScreen(onUploadComplete: _handleUploadComplete),
       MeetingsListScreen(key: _meetingsKey),
+      const ChatScreen(),
       const SettingsScreen(),
     ];
 
@@ -47,10 +49,14 @@ class _MainLayoutState extends State<MainLayout> {
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'Record'),
             BottomNavigationBarItem(
               icon: Icon(Icons.format_list_bulleted),
               label: 'Meetings',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.auto_awesome),
+              label: 'Assistant',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings),

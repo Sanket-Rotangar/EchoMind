@@ -122,23 +122,30 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // App Logo Header
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const CircleAvatar(
-                  backgroundColor: AppColors.surface,
-                  child: Icon(Icons.person, color: AppColors.textPrimary),
-                ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.notifications_none,
-                    color: AppColors.textPrimary,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.cover,
                   ),
-                  onPressed: () {},
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'EchoMind',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
             Text(
               'Start your meeting\nin seconds',
               style: Theme.of(context).textTheme.displayLarge,
@@ -156,8 +163,8 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
                   animation: _pulseController,
                   builder: (context, child) {
                     return Container(
-                      width: 150,
-                      height: 150,
+                      width: 160,
+                      height: 160,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         boxShadow: [
@@ -166,15 +173,15 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
                               color: AppColors.primaryPeach.withOpacity(
                                 0.5 * _pulseController.value,
                               ),
-                              blurRadius: 50,
-                              spreadRadius: 10 * _pulseController.value,
+                              blurRadius: 60,
+                              spreadRadius: 15 * _pulseController.value,
                             ),
                         ],
                         gradient: RadialGradient(
                           colors: _isRecording
                               ? [
                                   AppColors.primaryPeach,
-                                  AppColors.primaryPeach.withOpacity(0.5),
+                                  AppColors.primaryPeach.withOpacity(0.6),
                                 ]
                               : [AppColors.surface, AppColors.background],
                         ),
@@ -194,7 +201,7 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
                                 _isRecording
                                     ? Icons.stop_rounded
                                     : Icons.mic_none,
-                                size: 60,
+                                size: 64,
                                 color: AppColors.textPrimary,
                               ),
                       ),
@@ -203,17 +210,26 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
                 ),
               ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
             Center(
-              child: Text(
-                _isProcessing
-                    ? 'Extracting intelligence...'
-                    : (_isRecording
-                          ? 'Listening to meeting...'
-                          : 'Tap orb to begin'),
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  _isProcessing
+                      ? 'Extracting intelligence...'
+                      : (_isRecording
+                            ? 'Listening to meeting...'
+                            : 'Tap to begin recording'),
+                  style: TextStyle(
+                    color: _isRecording ? AppColors.primaryPeach : AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
