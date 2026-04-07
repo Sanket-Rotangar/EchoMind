@@ -13,3 +13,18 @@
 .trae
 .windsurf
 .env
+
+# Google OAuth credentials - NEVER COMMIT
+client_secret*.json
+credentials.json
+token.json
+*.pickle
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# Logs
+*.log

@@ -1,6 +1,6 @@
 import httpx
 import config
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from urllib.parse import quote
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 import logging
@@ -54,7 +54,9 @@ def _ensure_single_token(url: str, token_override: str = "") -> str:
         filtered_pairs.append(("token", token_value))
 
     normalized_query = urlencode(filtered_pairs)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, normalized_query, parts.fragment))
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, normalized_query, parts.fragment)
+    )
 
 
 async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
@@ -83,8 +85,14 @@ async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
                 response.text,
             )
             body_text = response.text
-            if response.status_code == 409 or "23505" in body_text or "unique_user_audio_path" in body_text:
-                logger.warning(f"[DB] duplicate meeting detected user={user_id} path={path}, returning existing row")
+            if (
+                response.status_code == 409
+                or "23505" in body_text
+                or "unique_user_audio_path" in body_text
+            ):
+                logger.warning(
+                    f"[DB] duplicate meeting detected user={user_id} path={path}, returning existing row"
+                )
                 query_url = _postgrest_url(
                     f"meetings?user_id=eq.{quote(user_id, safe='')}&audio_storage_path=eq.{quote(path, safe='')}&select=id,audio_storage_path&order=created_at.desc&limit=1"
                 )
@@ -102,7 +110,9 @@ async def insert_meeting(user_id: str, path: str) -> Dict[str, Any]:
         return rows[0]
 
 
-async def insert_meeting_event(meeting_id: str, stage: str, details: Dict[str, Any] | None = None):
+async def insert_meeting_event(
+    meeting_id: str, stage: str, details: Optional[Dict[str, Any]] = None
+):
     payload = {
         "meeting_id": meeting_id,
         "stage": stage,
@@ -124,14 +134,16 @@ async def insert_meeting_event(meeting_id: str, stage: str, details: Dict[str, A
                 response.text,
             )
             response.raise_for_status()
-        logger.info("[DB] meeting event inserted meeting=%s stage=%s", meeting_id, stage)
+        logger.info(
+            "[DB] meeting event inserted meeting=%s stage=%s", meeting_id, stage
+        )
 
 
 async def transition_meeting_state(
     meeting_id: str,
     status: str,
-    details: Dict[str, Any] | None = None,
-    extra_updates: Dict[str, Any] | None = None,
+    details: Optional[Dict[str, Any]] = None,
+    extra_updates: Optional[Dict[str, Any]] = None,
 ):
     logger.info(
         "[PIPELINE][STATE] transition-start meeting=%s status=%s detailsKeys=%s updateKeys=%s",
@@ -145,7 +157,9 @@ async def transition_meeting_state(
         payload.update(extra_updates)
     await update_meeting(meeting_id, payload)
     await insert_meeting_event(meeting_id, status, details)
-    logger.info("[PIPELINE][STATE] transition-done meeting=%s status=%s", meeting_id, status)
+    logger.info(
+        "[PIPELINE][STATE] transition-done meeting=%s status=%s", meeting_id, status
+    )
 
 
 async def update_meeting(meeting_id: str, payload: Dict[str, Any]):
@@ -170,7 +184,9 @@ async def update_meeting(meeting_id: str, payload: Dict[str, Any]):
 
 async def replace_action_items(meeting_id: str, items: List[Dict[str, Any]]):
     logger.info(f"[DB] replace action_items meeting={meeting_id} count={len(items)}")
-    delete_url = _postgrest_url(f"action_items?meeting_id=eq.{quote(meeting_id, safe='')}")
+    delete_url = _postgrest_url(
+        f"action_items?meeting_id=eq.{quote(meeting_id, safe='')}"
+    )
     async with httpx.AsyncClient(timeout=30.0) as client:
         delete_response = await client.delete(delete_url, headers=_supabase_headers())
         delete_response.raise_for_status()
@@ -202,13 +218,17 @@ async def generate_upload_url(path: str) -> str:
     logger.info(f"[STORAGE] generate upload signed url path={path}")
     url = f"{config.SUPABASE_URL}/storage/v1/object/upload/sign/{config.SUPABASE_BUCKET}/{quote(path, safe='')}"
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, headers=_supabase_headers(), json={"upsert": False})
+        response = await client.post(
+            url, headers=_supabase_headers(), json={"upsert": False}
+        )
         response.raise_for_status()
         data = response.json()
 
         signed_path = data.get("signedURL") or data.get("signedUrl")
         if signed_path:
-            logger.info(f"[STORAGE] upload signed url generated path={path} mode=signedPath")
+            logger.info(
+                f"[STORAGE] upload signed url generated path={path} mode=signedPath"
+            )
             normalized = _normalize_signed_storage_url(signed_path)
             return _ensure_single_token(normalized)
 
@@ -220,11 +240,15 @@ async def generate_upload_url(path: str) -> str:
             logger.info(f"[STORAGE] upload signed url generated path={path} mode=url")
             return base
 
-        logger.error(f"[STORAGE] upload signed url missing expected keys path={path} keys={list(data.keys())}")
+        logger.error(
+            f"[STORAGE] upload signed url missing expected keys path={path} keys={list(data.keys())}"
+        )
         return ""
 
 
-async def get_meetings(user_id: str, limit: int = 8, offset: int = 0) -> List[Dict[str, Any]]:
+async def get_meetings(
+    user_id: str, limit: int = 8, offset: int = 0
+) -> List[Dict[str, Any]]:
     logger.info(f"[DB] list meetings user={user_id} limit={limit} offset={offset}")
     end = offset + limit - 1
     url = _postgrest_url(
@@ -261,4 +285,180 @@ async def get_meeting_by_id(meeting_id: str) -> Dict[str, Any]:
         rows = response.json() or []
         if not rows:
             return {}
+        return rows[0]
+
+
+# ============ User Management ============
+
+
+async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Get a user by email."""
+    logger.info(f"[DB] get user by email={email}")
+    url = _postgrest_url(f"users?email=eq.{quote(email, safe='')}&limit=1")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=_supabase_headers())
+        response.raise_for_status()
+        rows = response.json() or []
+        return rows[0] if rows else None
+
+
+async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Get a user by ID."""
+    logger.info(f"[DB] get user by id={user_id}")
+    url = _postgrest_url(f"users?id=eq.{quote(user_id, safe='')}&limit=1")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=_supabase_headers())
+        response.raise_for_status()
+        rows = response.json() or []
+        return rows[0] if rows else None
+
+
+async def create_user(
+    email: str,
+    name: Optional[str] = None,
+    google_id: Optional[str] = None,
+    picture_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new user."""
+    logger.info(f"[DB] create user email={email}")
+    url = _postgrest_url("users")
+    payload = {
+        "email": email,
+        "name": name,
+        "google_id": google_id,
+        "picture_url": picture_url,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=payload,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            raise RuntimeError("Failed to create user")
+        logger.info(f"[DB] user created id={rows[0].get('id')}")
+        return rows[0]
+
+
+async def update_user(user_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Update a user."""
+    logger.info(f"[DB] update user id={user_id} fields={list(updates.keys())}")
+    url = _postgrest_url(f"users?id=eq.{quote(user_id, safe='')}")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.patch(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=updates,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else {}
+
+
+async def get_or_create_user(
+    email: str,
+    name: Optional[str] = None,
+    google_id: Optional[str] = None,
+    picture_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get existing user or create new one."""
+    user = await get_user_by_email(email)
+
+    if user:
+        # Update user info if needed
+        updates = {}
+        if name and user.get("name") != name:
+            updates["name"] = name
+        if google_id and user.get("google_id") != google_id:
+            updates["google_id"] = google_id
+        if picture_url and user.get("picture_url") != picture_url:
+            updates["picture_url"] = picture_url
+
+        if updates:
+            user = await update_user(user["id"], updates)
+
+        return user
+
+    return await create_user(email, name, google_id, picture_url)
+
+
+async def save_user_calendar_tokens(
+    user_id: str,
+    access_token: str,
+    refresh_token: Optional[str],
+    expires_at: Optional[str],
+) -> Dict[str, Any]:
+    """Save Google Calendar tokens for a user."""
+    logger.info(f"[DB] save calendar tokens user={user_id}")
+
+    calendar_tokens = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+    }
+
+    return await update_user(
+        user_id,
+        {
+            "calendar_connected": True,
+            "calendar_tokens": calendar_tokens,
+        },
+    )
+
+
+async def get_user_calendar_tokens(user_id: str) -> Optional[Dict[str, Any]]:
+    """Get a user's calendar tokens."""
+    user = await get_user_by_id(user_id)
+    if not user:
+        return None
+    return user.get("calendar_tokens")
+
+
+async def disconnect_user_calendar(user_id: str) -> Dict[str, Any]:
+    """Disconnect a user's calendar."""
+    logger.info(f"[DB] disconnect calendar user={user_id}")
+    return await update_user(
+        user_id,
+        {
+            "calendar_connected": False,
+            "calendar_tokens": None,
+        },
+    )
+
+
+async def create_user_with_password(
+    email: str,
+    name: str,
+    password_hash: str,
+) -> Dict[str, Any]:
+    """Create a new user with email and password."""
+    logger.info(f"[DB] create user with password email={email}")
+    url = _postgrest_url("users")
+    payload = {
+        "email": email,
+        "name": name,
+        "password_hash": password_hash,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=payload,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] create user with password failed email=%s status=%s response=%s",
+                email,
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            raise RuntimeError("Failed to create user")
+        logger.info(f"[DB] user with password created id={rows[0].get('id')}")
         return rows[0]

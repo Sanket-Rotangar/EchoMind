@@ -2,29 +2,23 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'auth_service.dart';
+import 'config.dart';
 
 class ApiService {
-  static const Duration _requestTimeout = Duration(seconds: 30);
+  static const Duration _requestTimeout = AppConfig.requestTimeout;
 
-  static const String fastApiBaseUrl = String.fromEnvironment(
-    'FASTAPI_BASE_URL',
-    defaultValue: 'http://192.168.1.13:8000', // Safe default fallback
-  );
+  static const String fastApiBaseUrl = AppConfig.backendUrl;
 
-  static const String userId = String.fromEnvironment(
-    'SOORA_USER_ID',
-    defaultValue: '',
-  );
+  static final AuthService _authService = AuthService();
 
   static Map<String, String> _headers({String? contentType}) {
-    if (userId.isEmpty) {
-      throw Exception('SOORA_USER_ID is required for API requests');
+    final user = _authService.currentUser;
+    if (user == null) {
+      throw Exception('Not authenticated. Please sign in.');
     }
 
-    return {
-      'x-user-id': userId,
-      if (contentType != null) 'Content-Type': contentType,
-    };
+    return _authService.getAuthHeaders(contentType: contentType);
   }
 
   static Future<Map<String, dynamic>> processMeetingAudio(
@@ -121,6 +115,31 @@ class ApiService {
     }
 
     return data;
+  }
+
+  static Future<String> getCalendarAuthUrl() async {
+    final response = await http.get(
+      Uri.parse('$fastApiBaseUrl/auth/google/calendar/url'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to get calendar auth URL'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload['url'] as String;
+  }
+
+  static Future<void> disconnectCalendar() async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/auth/google/calendar/disconnect'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to disconnect calendar'));
+    }
   }
 
   static String _extractErrorMessage(http.Response response, String fallback) {

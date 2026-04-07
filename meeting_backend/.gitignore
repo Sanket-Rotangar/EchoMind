@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.*
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Google OAuth credentials - NEVER COMMIT
+client_secret*.json
+credentials.json
+token.json
+*.pickle
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
