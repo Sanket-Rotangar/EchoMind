@@ -13,7 +13,7 @@ class AppConfig {
 
   /// Default backend URL for development.
   /// Update this when your local IP changes.
-  static const String _defaultBackendUrl = 'http://192.168.100.190:8000';
+  static const String _defaultBackendUrl = 'http://10.17.197.201:8000';
 
   /// Backend API base URL.
   /// Uses compile-time environment variable if provided, otherwise falls back to default.
