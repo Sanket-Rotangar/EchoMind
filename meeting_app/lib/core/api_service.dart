@@ -167,6 +167,136 @@ class ApiService {
     return payload;
   }
 
+  // ============ Meeting Groups ============
+
+  static Future<Map<String, dynamic>> createGroup({
+    required String name,
+    String? description,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups'),
+      headers: _headers(contentType: 'application/json'),
+      body: jsonEncode({
+        'name': name,
+        if (description != null) 'description': description,
+      }),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to create group'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload['data'] as Map<String, dynamic>;
+  }
+
+  static Future<List<dynamic>> getGroups() async {
+    final response = await http.get(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to fetch groups'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final data = payload['data'];
+
+    if (data is! List) {
+      throw Exception('Invalid groups response format');
+    }
+
+    return data;
+  }
+
+  static Future<Map<String, dynamic>> getGroupDetail(String groupId) async {
+    final response = await http.get(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to fetch group details'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload['data'] as Map<String, dynamic>;
+  }
+
+  static Future<void> addMeetingToGroup(String groupId, String meetingId) async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId/meetings/$meetingId'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to add meeting to group'));
+    }
+  }
+
+  static Future<void> removeMeetingFromGroup(String groupId, String meetingId) async {
+    final response = await http.delete(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId/meetings/$meetingId'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to remove meeting from group'));
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateGroup(
+    String groupId, {
+    String? name,
+    String? description,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId'),
+      headers: _headers(contentType: 'application/json'),
+      body: jsonEncode({
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+      }),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to update group'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload['data'] as Map<String, dynamic>;
+  }
+
+  static Future<void> deleteGroup(String groupId) async {
+    final response = await http.delete(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Failed to delete group'));
+    }
+  }
+
+  static Future<Map<String, dynamic>> sendGroupChatMessage(
+    String groupId,
+    String message,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/api/v1/groups/$groupId/chat'),
+      headers: _headers(contentType: 'application/json'),
+      body: jsonEncode({'message': message}),
+    ).timeout(const Duration(seconds: 60)); // Longer timeout for AI responses
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractErrorMessage(response, 'Group chat request failed'));
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload;
+  }
+
   static String _extractErrorMessage(http.Response response, String fallback) {
     try {
       final payload = jsonDecode(response.body);

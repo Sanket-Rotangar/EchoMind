@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_service.dart';
 import '../core/theme.dart';
+import 'group_detail_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String meetingId;
@@ -78,6 +79,80 @@ class _SummaryScreenState extends State<SummaryScreen> {
     final minute = local.minute.toString().padLeft(2, '0');
 
     return '$month $day, ${local.year} at $hour:$minute';
+  }
+
+  Future<void> _showAddToGroupDialog() async {
+    try {
+      final groups = await ApiService.getGroups();
+      
+      if (!mounted) return;
+
+      if (groups.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No groups available. Create a group first from the Groups tab.')),
+        );
+        return;
+      }
+
+      final selectedGroup = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text(
+            'Add to Group',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: groups.length,
+              itemBuilder: (context, index) {
+                final group = groups[index];
+                return ListTile(
+                  leading: const Icon(Icons.folder, color: AppColors.accent),
+                  title: Text(
+                    group['name'] ?? 'Unnamed Group',
+                    style: const TextStyle(color: AppColors.textPrimary),
+                  ),
+                  onTap: () => Navigator.pop(context, group),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+          ],
+        ),
+      );
+
+      if (selectedGroup != null && mounted) {
+        try {
+          await ApiService.addMeetingToGroup(selectedGroup['id'], widget.meetingId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Added to ${selectedGroup['name']}')),
+            );
+            _refreshMeeting();
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to add to group: $e')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load groups: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -168,6 +243,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           final status = (data['status'] ?? 'uploaded').toString().toLowerCase();
           final title = (data['title'] ?? 'Untitled Meeting').toString();
           final failureReason = (data['failure_reason'] ?? '').toString();
+          final groupId = data['group_id']?.toString();
 
           final intelligenceData = data['intelligence_data'] is Map<String, dynamic>
               ? data['intelligence_data'] as Map<String, dynamic>
@@ -182,17 +258,17 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
           final rawDecisions = intelligenceData['decisions_register'] ?? intelligenceData['decisions_made'];
           final decisions = rawDecisions is List
-              ? rawDecisions.map((e) => e.toString()).toList()
+              ? rawDecisions.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
               : <String>[];
 
           final rawRisks = intelligenceData['risks_and_blockers'] ?? intelligenceData['blockers'];
           final risks = rawRisks is List
-              ? rawRisks.map((e) => e.toString()).toList()
+              ? rawRisks.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
               : <String>[];
 
           final rawMetrics = intelligenceData['key_metrics'];
           final metrics = rawMetrics is List
-              ? rawMetrics.map((e) => e.toString()).toList()
+              ? rawMetrics.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
               : <String>[];
 
           final stateEvents = (data['meeting_state_events'] is List)
@@ -215,6 +291,132 @@ class _SummaryScreenState extends State<SummaryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Add/Remove from Group Button (prominent)
+                  if (status == 'completed')
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: groupId == null
+                          ? ElevatedButton.icon(
+                              onPressed: _showAddToGroupDialog,
+                              icon: const Icon(Icons.folder_outlined, size: 24),
+                              label: const Text('Add to Group', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryPeach,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: AppColors.surface,
+                                    title: const Text('Remove from Group', style: TextStyle(color: AppColors.textPrimary)),
+                                    content: const Text(
+                                      'Remove this meeting from its group?',
+                                      style: TextStyle(color: AppColors.textSecondary),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text('Remove', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                
+                                if (confirm == true && mounted) {
+                                  try {
+                                    await ApiService.removeMeetingFromGroup(groupId, widget.meetingId);
+                                    _refreshMeeting();
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Removed from group')),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Failed to remove: $e')),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.folder_off, size: 24),
+                              label: const Text('Remove from Group', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.withOpacity(0.2),
+                                foregroundColor: Colors.red,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                    ),
+
+                  // Group Info (if meeting is in a group)
+                  if (groupId != null) ...[
+                    FutureBuilder<Map<String, dynamic>>(
+                      future: ApiService.getGroupDetail(groupId),
+                      builder: (context, groupSnapshot) {
+                        if (groupSnapshot.hasData) {
+                          final group = groupSnapshot.data!;
+                          final groupMeetings = (group['meetings'] as List?) ?? [];
+                          return _buildCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.folder, color: AppColors.primaryPeach, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Part of: ${group['name']}',
+                                        style: const TextStyle(
+                                          color: AppColors.primaryPeach,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => GroupDetailScreen(groupId: groupId),
+                                          ),
+                                        );
+                                      },
+                                      child: const Text('View Group'),
+                                    ),
+                                  ],
+                                ),
+                                if (groupMeetings.length > 1) ...[
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '${groupMeetings.length} meetings in this series',
+                                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Title and Status Card
                   _buildCard(
                     child: Column(

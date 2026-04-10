@@ -6,6 +6,7 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import '../core/call_recording_service.dart';
 import '../core/theme.dart';
 import 'chat_screen.dart';
+import 'groups_list_screen.dart';
 import 'home_record_screen.dart';
 import 'meetings_list_screen.dart';
 import 'settings_screen.dart';
@@ -27,7 +28,8 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void initState() {
     super.initState();
-    _setupOverlayListener();
+    // Temporarily disabled to avoid stream error
+    // _setupOverlayListener();
   }
 
   @override
@@ -38,16 +40,23 @@ class _MainLayoutState extends State<MainLayout> {
 
   void _setupOverlayListener() {
     // Listen for messages from the overlay window
-    _overlayDataSubscription = FlutterOverlayWindow.overlayListener.listen((data) {
-      if (data is Map) {
-        final action = data['action'];
-        if (action == 'start_recording') {
-          _callRecordingService.startRecording();
-        } else if (action == 'stop_recording') {
-          _callRecordingService.stopRecording();
+    // Use asBroadcastStream to allow multiple listeners during hot reload
+    _overlayDataSubscription?.cancel(); // Cancel any existing subscription first
+    try {
+      _overlayDataSubscription = FlutterOverlayWindow.overlayListener.asBroadcastStream().listen((data) {
+        if (data is Map) {
+          final action = data['action'];
+          if (action == 'start_recording') {
+            _callRecordingService.startRecording();
+          } else if (action == 'stop_recording') {
+            _callRecordingService.stopRecording();
+          }
         }
-      }
-    });
+      });
+    } catch (e) {
+      // Ignore stream errors during development
+      print('Overlay listener error (can be ignored): $e');
+    }
   }
 
   void _handleUploadComplete() {
@@ -63,6 +72,7 @@ class _MainLayoutState extends State<MainLayout> {
     final screens = [
       HomeRecordScreen(onUploadComplete: _handleUploadComplete),
       MeetingsListScreen(key: _meetingsKey),
+      const GroupsListScreen(),
       const ChatScreen(),
       const SettingsScreen(),
     ];
@@ -85,6 +95,10 @@ class _MainLayoutState extends State<MainLayout> {
             BottomNavigationBarItem(
               icon: Icon(Icons.format_list_bulleted),
               label: 'Meetings',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.folder_outlined),
+              label: 'Groups',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.auto_awesome),
