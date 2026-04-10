@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../core/api_service.dart';
 import '../core/theme.dart';
+import '../services/pdf_generator.dart';
 import 'group_detail_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
@@ -26,6 +28,59 @@ class _SummaryScreenState extends State<SummaryScreen> {
     setState(() {
       _meetingFuture = ApiService.getMeetingDetails(widget.meetingId);
     });
+  }
+
+  Future<void> _downloadPdf(BuildContext context) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryPeach),
+        ),
+      );
+
+      // Get meeting data
+      final meeting = await _meetingFuture;
+      
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      final title = meeting['title']?.toString() ?? 'Untitled Meeting';
+      final createdAt = meeting['created_at']?.toString() ?? '';
+      final intelligenceData = meeting['intelligence_data'] as Map<String, dynamic>? ?? {};
+      final transcript = meeting['transcript_text']?.toString();
+
+      // Generate PDF
+      final pdfFile = await PdfGenerator.generateMeetingMinutes(
+        title: title,
+        createdAt: createdAt,
+        intelligenceData: intelligenceData,
+        transcript: transcript,
+      );
+
+      if (!mounted) return;
+
+      // Show share/save dialog
+      await Printing.sharePdf(
+        bytes: await pdfFile.readAsBytes(),
+        filename: 'meeting_minutes_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Meeting minutes ready to share')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog if still open
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate PDF: $e')),
+        );
+      }
+    }
   }
 
   String _statusLabel(String status) {
@@ -179,6 +234,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.primaryPeach),
             onPressed: _refreshMeeting,
+          ),
+          IconButton(
+            icon: const Icon(Icons.share, color: AppColors.primaryPeach),
+            onPressed: () => _downloadPdf(context),
+            tooltip: 'Share Minutes',
           ),
         ],
       ),

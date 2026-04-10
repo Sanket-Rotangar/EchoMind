@@ -45,6 +45,11 @@ dependencies:
   url_launcher: ^6.2.5
   phone_state: ^3.0.1
   flutter_overlay_window: ^0.4.5
+  pdf: ^3.11.1
+  printing: ^5.13.2
+  intl: ^0.19.0
+  file_picker: ^8.1.6
+  flutter_tts: ^4.2.0
 
 dev_dependencies:
   flutter_test:
