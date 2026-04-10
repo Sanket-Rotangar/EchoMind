@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 
 import '../core/api_service.dart';
 import '../core/theme.dart';
+import '../design_system/glass_card.dart';
+import '../design_system/neumorphic_button.dart';
 
 class HomeRecordScreen extends StatefulWidget {
   final VoidCallback onUploadComplete;
@@ -256,173 +259,202 @@ class _HomeRecordScreenState extends State<HomeRecordScreen>
             // App Logo Header
             Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 36,
-                    height: 36,
-                    fit: BoxFit.cover,
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryAccent.withOpacity(0.3),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      width: 36,
+                      height: 36,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  'EchoMind',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                ShaderMask(
+                  shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
+                  child: const Text(
+                    'EchoMind',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            Text(
+            const SizedBox(height: 32),
+            const Text(
               'Start your meeting\nin seconds',
-              style: Theme.of(context).textTheme.displayLarge,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                height: 1.2,
+                letterSpacing: -0.5,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               'Bring your team together and let AI handle the documentation.',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: TextStyle(
+                color: AppColors.textSecondary.withOpacity(0.8),
+                fontSize: 15,
+                height: 1.5,
+              ),
             ),
             const Spacer(),
             Center(
               child: Column(
                 children: [
+                  // Glowing Microphone Orb
                   GestureDetector(
                     onTap: _toggleRecording,
                     child: AnimatedBuilder(
                       animation: _pulseController,
                       builder: (context, child) {
                         return Container(
-                          width: 160,
-                          height: 160,
+                          width: 180,
+                          height: 180,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            gradient: _isRecording
+                                ? (_isPaused
+                                    ? const LinearGradient(
+                                        colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                                      )
+                                    : AppColors.primaryGradient)
+                                : null,
+                            color: _isRecording ? null : AppColors.surface,
                             boxShadow: [
                               if (_isRecording && !_isPaused)
                                 BoxShadow(
-                                  color: AppColors.primaryPeach.withOpacity(
-                                    0.5 * _pulseController.value,
+                                  color: AppColors.primaryAccent.withOpacity(
+                                    0.6 + (_pulseController.value * 0.4),
                                   ),
-                                  blurRadius: 60,
-                                  spreadRadius: 15 * _pulseController.value,
+                                  blurRadius: 80 + (_pulseController.value * 40),
+                                  spreadRadius: 20 + (_pulseController.value * 15),
                                 ),
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 30,
+                                offset: const Offset(0, 15),
+                              ),
                             ],
-                            gradient: RadialGradient(
-                              colors: _isRecording
-                                  ? (_isPaused
-                                      ? [
-                                          Colors.orange,
-                                          Colors.orange.withOpacity(0.6),
-                                        ]
-                                      : [
-                                          AppColors.primaryPeach,
-                                          AppColors.primaryPeach.withOpacity(0.6),
-                                        ])
-                                  : [AppColors.surface, AppColors.background],
-                            ),
                             border: Border.all(
                               color: _isRecording
-                                  ? (_isPaused ? Colors.orange : AppColors.primaryPeach)
-                                  : AppColors.border,
+                                  ? AppColors.borderAccent
+                                  : AppColors.borderGlass,
                               width: 2,
                             ),
                           ),
-                          child: Center(
-                            child: _isProcessing
-                                ? const CircularProgressIndicator(
-                                    color: AppColors.primaryPeach,
-                                  )
-                                : Icon(
-                                    _isRecording
-                                        ? Icons.stop_rounded
-                                        : Icons.mic_none,
-                                    size: 64,
-                                    color: AppColors.textPrimary,
-                                  ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(90),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: Center(
+                                child: _isProcessing
+                                    ? const CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 3,
+                                      )
+                                    : Icon(
+                                        _isRecording ? Icons.stop_rounded : Icons.mic_none,
+                                        size: 72,
+                                        color: Colors.white,
+                                      ),
+                              ),
+                            ),
                           ),
                         );
                       },
                     ),
                   ),
                   
-                  // Pause/Resume button (only visible when recording)
+                  const SizedBox(height: 32),
+                  
+                  // Status Card
+                  GlassCard(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    borderRadius: 20,
+                    child: Text(
+                      _isProcessing
+                          ? 'Extracting intelligence...'
+                          : (_isPaused
+                              ? 'Recording paused - Tap to resume'
+                              : (_isRecording
+                                  ? 'Listening to meeting...'
+                                  : 'Tap to begin recording')),
+                      style: TextStyle(
+                        color: _isRecording
+                            ? AppColors.primaryAccent
+                            : AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  
+                  // Pause Button
                   if (_isRecording && !_isProcessing) ...[
                     const SizedBox(height: 24),
-                    GestureDetector(
-                      onTap: _togglePause,
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.surface,
-                          border: Border.all(
-                            color: _isPaused ? Colors.orange : AppColors.border,
-                            width: 2,
+                    NeumorphicButton(
+                      width: 80,
+                      height: 80,
+                      borderRadius: 40,
+                      onPressed: _togglePause,
+                      child: Icon(
+                        _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                        size: 36,
+                        color: _isPaused ? const Color(0xFFF59E0B) : AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                  
+                  // Upload Button
+                  if (!_isRecording && !_isProcessing) ...[
+                    const SizedBox(height: 24),
+                    NeumorphicButton(
+                      width: 200,
+                      height: 52,
+                      onPressed: _uploadAudioFile,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.upload_file,
+                            size: 20,
+                            color: AppColors.textPrimary,
                           ),
-                        ),
-                        child: Icon(
-                          _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                          size: 40,
-                          color: _isPaused ? Colors.orange : AppColors.textPrimary,
-                        ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Upload Audio',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 32),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Text(
-                  _isProcessing
-                      ? 'Extracting intelligence...'
-                      : (_isPaused
-                          ? 'Recording paused - Tap to resume'
-                          : (_isRecording
-                              ? 'Listening to meeting...'
-                              : 'Tap to begin recording')),
-                  style: TextStyle(
-                    color: _isPaused
-                        ? Colors.orange
-                        : (_isRecording ? AppColors.primaryPeach : AppColors.textSecondary),
-                    fontWeight: FontWeight.w500,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-            
-            // Upload Audio Button
-            if (!_isRecording && !_isProcessing) ...[
-              const SizedBox(height: 24),
-              Center(
-                child: OutlinedButton.icon(
-                  onPressed: _uploadAudioFile,
-                  icon: const Icon(Icons.upload_file, size: 20),
-                  label: const Text('Upload Audio File'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primaryPeach,
-                    side: const BorderSide(color: AppColors.primaryPeach, width: 1.5),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            
             const Spacer(),
           ],
         ),

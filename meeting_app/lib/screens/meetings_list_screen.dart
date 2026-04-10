@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_service.dart';
 import '../core/theme.dart';
+import '../design_system/bento_tile.dart';
 import 'summary_screen.dart';
 
 class MeetingsListScreen extends StatefulWidget {
@@ -400,111 +401,175 @@ class MeetingsListScreenState extends State<MeetingsListScreen>
                     onRefresh: _onRefresh,
                     color: AppColors.primaryPeach,
                     backgroundColor: AppColors.surface,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      itemCount: _meetings.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (_hasMore && index == _meetings.length) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8, bottom: 12),
-                            child: Center(
-                              child: TextButton(
-                                onPressed: _isLoadingMore
-                                    ? null
-                                    : _loadMoreMeetings,
-                                child: Text(
-                                  _isLoadingMore
-                                      ? 'Loading...'
-                                      : 'Load older meetings...',
-                                  style: const TextStyle(
-                                    color: AppColors.primaryPeach,
-                                    fontWeight: FontWeight.w600,
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.all(20),
+                          sliver: SliverGrid(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                              childAspectRatio: 0.85,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final meeting = _meetings[index] as Map<String, dynamic>;
+                                final title = (meeting['title'] ?? 'Untitled Meeting').toString();
+                                final createdAt = meeting['created_at']?.toString();
+                                final status = (meeting['status'] ?? 'uploaded').toString().toLowerCase();
+                                final meetingId = meeting['id']?.toString();
+
+                                return BentoTile(
+                                  showGradientBorder: status == 'completed',
+                                  onTap: meetingId != null
+                                      ? () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => SummaryScreen(meetingId: meetingId),
+                                            ),
+                                          );
+                                        }
+                                      : null,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Status Badge
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          gradient: _getStatusGradient(status),
+                                          borderRadius: BorderRadius.circular(12),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: _getStatusColor(status).withOpacity(0.3),
+                                              blurRadius: 8,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Text(
+                                          status.toUpperCase(),
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                      
+                                      const SizedBox(height: 16),
+                                      
+                                      // Title
+                                      Expanded(
+                                        child: Text(
+                                          title,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.textPrimary,
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      
+                                      const SizedBox(height: 12),
+                                      
+                                      // Date
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.access_time,
+                                            size: 14,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              _formatDate(createdAt),
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              childCount: _meetings.length,
+                            ),
+                          ),
+                        ),
+                        
+                        // Load More Button
+                        if (_hasMore)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: Center(
+                                child: TextButton(
+                                  onPressed: _isLoadingMore ? null : _loadMoreMeetings,
+                                  child: Text(
+                                    _isLoadingMore ? 'Loading...' : 'Load older meetings...',
+                                    style: const TextStyle(
+                                      color: AppColors.primaryPeach,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        }
-
-                        final meeting =
-                            _meetings[index] as Map<String, dynamic>;
-                        final title = (meeting['title'] ?? 'Untitled Meeting')
-                            .toString();
-                        final createdAt = meeting['created_at']?.toString();
-                        final status = (meeting['status'] ?? 'uploaded')
-                            .toString()
-                            .toLowerCase();
-                        final meetingId = meeting['id']?.toString();
-
-                        return GestureDetector(
-                          onTap: meetingId != null
-                              ? () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          SummaryScreen(meetingId: meetingId),
-                                    ),
-                                  );
-                                }
-                              : null,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: AppColors.textPrimary,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        _formatDate(createdAt),
-                                        style: const TextStyle(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildStatusBadge(status),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Icon(
-                                    Icons.chevron_right,
-                                    color: AppColors.textSecondary.withOpacity(0.5),
-                                    size: 20,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
-                        );
-                      },
+                      ],
                     ),
                   ),
           ),
         ],
       ),
     );
+  }
+  
+  LinearGradient _getStatusGradient(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return const LinearGradient(
+          colors: [Color(0xFF10B981), Color(0xFF059669)],
+        );
+      case 'processing':
+      case 'analyzing':
+      case 'transcribing':
+        return const LinearGradient(
+          colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+        );
+      case 'failed':
+        return const LinearGradient(
+          colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+        );
+      default:
+        return AppColors.primaryGradient;
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return AppColors.statusCompleted;
+      case 'processing':
+      case 'analyzing':
+      case 'transcribing':
+        return AppColors.statusProcessing;
+      case 'failed':
+        return AppColors.statusFailed;
+      default:
+        return AppColors.primaryAccent;
+    }
   }
 }

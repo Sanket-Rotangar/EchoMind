@@ -4,6 +4,10 @@ import 'package:printing/printing.dart';
 import '../core/api_service.dart';
 import '../core/theme.dart';
 import '../services/pdf_generator.dart';
+import '../design_system/bento_tile.dart';
+import '../design_system/glow_icon.dart';
+import '../design_system/glass_card.dart';
+import '../design_system/colors.dart' as DesignColors;
 import 'group_detail_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
@@ -682,14 +686,9 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 
   Widget _buildCard({required Widget child}) {
-    return Container(
+    return BentoTile(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
+      padding: const EdgeInsets.all(24),
       child: child,
     );
   }
@@ -697,14 +696,19 @@ class _SummaryScreenState extends State<SummaryScreen> {
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, color: AppColors.primaryPeach, size: 20),
-        const SizedBox(width: 8),
+        GlowIcon(
+          icon: icon,
+          size: 24,
+          color: DesignColors.AppColors.primaryAccent,
+        ),
+        const SizedBox(width: 12),
         Text(
           title,
           style: const TextStyle(
             color: AppColors.textPrimary,
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
+            letterSpacing: 0.3,
           ),
         ),
       ],
@@ -713,44 +717,53 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
   Widget _buildStatusChip(String status) {
     final color = _statusColor(status);
+    final gradient = _getStatusGradient(status);
+    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        gradient: gradient,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (status == 'transcribing' || status == 'analyzing')
             Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: 8),
               child: SizedBox(
-                width: 12,
-                height: 12,
+                width: 14,
+                height: 14,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: color,
+                  color: Colors.white,
                 ),
               ),
             )
           else
             Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: 8),
               child: Icon(
                 status == 'completed' ? Icons.check_circle : 
                 status == 'failed' ? Icons.error : Icons.circle,
-                color: color,
-                size: 14,
+                color: Colors.white,
+                size: 16,
               ),
             ),
           Text(
             _statusLabel(status),
-            style: TextStyle(
-              color: color,
+            style: const TextStyle(
+              color: Colors.white,
               fontSize: 13,
               fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -758,19 +771,39 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
+  LinearGradient _getStatusGradient(String status) {
+    switch (status) {
+      case 'completed':
+        return const LinearGradient(
+          colors: [Color(0xFF10B981), Color(0xFF059669)],
+        );
+      case 'processing':
+      case 'transcribing':
+      case 'analyzing':
+        return const LinearGradient(
+          colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+        );
+      case 'failed':
+        return const LinearGradient(
+          colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+        );
+      default:
+        return DesignColors.AppColors.primaryGradient;
+    }
+  }
+
   Widget _buildMetricChip(String metric) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
+    return BentoTile(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.insights, color: AppColors.primaryPeach, size: 16),
-          const SizedBox(width: 6),
+          GlowIcon(
+            icon: Icons.insights,
+            size: 18,
+            color: DesignColors.AppColors.secondaryAccent,
+          ),
+          const SizedBox(width: 10),
           Flexible(
             child: Text(
               metric,

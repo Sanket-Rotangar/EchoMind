@@ -15,13 +15,6 @@ class AppColors {
   static const Color textPrimary = Color(0xFFFFFFFF);
   static const Color textSecondary = Color(0xFF9CA3AF);
   
-  // Legacy (for compatibility)
-  static const Color primaryPeach = Color(0xFFFF9A8B);
-  static const Color border = Color(0x1AFFFFFF);
-  static const Color accent = Color(0xFFFF9A8B);
-  static const Color cardBackground = Color(0xFF111117);
-  static const Color divider = Color(0x1AFFFFFF);
-  
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [Color(0xFFFF9A8B), Color(0xFFFF6A88)],
@@ -33,6 +26,15 @@ class AppColors {
     colors: [Color(0xFF6DD5FA), Color(0xFF2193B0)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
+  );
+  
+  static const LinearGradient glowGradient = LinearGradient(
+    colors: [
+      Color(0x33FF9A8B),
+      Color(0x00FF9A8B),
+    ],
+    begin: Alignment.center,
+    end: Alignment.bottomCenter,
   );
   
   // Status colors

@@ -10,6 +10,10 @@ import '../core/auth_service.dart';
 // COMMENTED OUT - Call recording feature disabled due to Android limitations
 // import '../core/call_recording_service.dart';
 import '../core/theme.dart';
+import '../design_system/bento_tile.dart';
+import '../design_system/glow_icon.dart';
+import '../design_system/glass_card.dart';
+import '../design_system/colors.dart' as DesignColors;
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -292,36 +296,65 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             const SizedBox(height: 24),
             
             // Profile Section
-            _buildSectionCard(
-              title: 'Profile',
+            BentoTile(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: AppColors.primaryPeach.withOpacity(0.2),
-                    backgroundImage: user?.photoUrl != null
-                        ? NetworkImage(user!.photoUrl!)
-                        : null,
-                    child: user?.photoUrl == null
-                        ? Text(
-                            (user?.name ?? user?.email ?? '?')[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: AppColors.primaryPeach,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      gradient: DesignColors.AppColors.primaryGradient,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: DesignColors.AppColors.primaryAccent.withOpacity(0.4),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: user?.photoUrl != null
+                        ? ClipOval(
+                            child: Image.network(
+                              user!.photoUrl!,
+                              fit: BoxFit.cover,
                             ),
                           )
-                        : null,
+                        : Center(
+                            child: Text(
+                              (user?.name ?? user?.email ?? '?')[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 20),
                   Expanded(
-                    child: Text(
-                      user?.name ?? 'User',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user?.name ?? 'User',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          user?.email ?? '',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -821,25 +854,35 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   }
 
   Widget _buildSectionCard({required String title, required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
+    return BentoTile(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.primaryPeach,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 20,
+                decoration: BoxDecoration(
+                  gradient: DesignColors.AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           child,
         ],
       ),
