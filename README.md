@@ -57,21 +57,12 @@ Migration `004` handles legacy enum-based `meetings.status` setups safely.
 
 ## Run Backend
 
-```bash
-cd meeting_backend
-/home/sanket-rotangar/Desktop/MeetingApp/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
+cd meeting_backend && /home/sanket-rotangar/.local/bin/python3.9 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Run Flutter
 
-```bash
-cd meeting_app
-flutter run \
-  --dart-define=FASTAPI_BASE_URL=http://<your-ip>:8000 \
-  --dart-define=SOORA_USER_ID=<valid-users.id-uuid>
-```
+cd meeting_app && flutter run -d 113f5562 --dart-define=FASTAPI_BASE_URL=http://10.17.197.126:8000
 
-`SOORA_USER_ID` must exist in `public.users` due to `meetings.user_id` foreign key.
 
 ## Backend Tests
 

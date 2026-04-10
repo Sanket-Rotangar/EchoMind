@@ -9,6 +9,7 @@ import auth_service
 import logging
 import uuid
 import time
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -20,10 +21,10 @@ app = FastAPI(title="EchoMind Backend")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=config.CORS_ALLOW_ORIGINS,
+    allow_credentials=config.CORS_ALLOW_CREDENTIALS,
+    allow_methods=config.CORS_ALLOW_METHODS,
+    allow_headers=config.CORS_ALLOW_HEADERS,
 )
 
 
@@ -430,46 +431,77 @@ async def _handle_calendar_callback(request: Request, code: str, state: str):
     # Exchange code for tokens (pass actual redirect URI for fallback)
     tokens = await auth_service.exchange_code_for_tokens(code, actual_redirect_uri)
     if not tokens:
-        # If token exchange failed, it might be because we're on the phone
-        # and the redirect_uri doesn't match. Show helpful message.
+        # In local development, offer a localhost -> LAN URL hint for mobile flows.
         full_url = str(request.url)
-        server_url = full_url.replace("localhost", config.LOCAL_IP).replace(
-            "127.0.0.1", config.LOCAL_IP
-        )
+        if config.LOCAL_IP and (
+            "localhost" in full_url or "127.0.0.1" in full_url
+        ):
+            server_url = full_url.replace("localhost", config.LOCAL_IP).replace(
+                "127.0.0.1", config.LOCAL_IP
+            )
 
+            return HTMLResponse(
+                content=f"""
+                <html>
+                <head>
+                    <title>Complete on Computer</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #0D0D0D; color: #F5F5F5; }}
+                        h1 {{ color: #E9A28B; }}
+                        .url-box {{ background: #1A1A1A; padding: 12px; border-radius: 8px; word-break: break-all; margin: 16px 0; font-size: 12px; }}
+                        .instructions {{ color: #8A8A8A; line-height: 1.6; }}
+                        button {{ background: #E9A28B; color: black; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 16px; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Almost there!</h1>
+                    <p class="instructions">
+                        Since you're connecting from your phone, please complete this on your computer:
+                    </p>
+                    <ol class="instructions">
+                        <li>Open this URL on your computer's browser:</li>
+                    </ol>
+                    <div class="url-box">{server_url}</div>
+                    <button onclick="navigator.clipboard.writeText('{server_url}').then(() => alert('Copied!'))">
+                        Copy URL
+                    </button>
+                </body>
+                </html>
+                """,
+                status_code=200,
+            )
+
+        logger.error(
+            "[CALENDAR] Token exchange failed callback=%s configured_redirect=%s",
+            actual_redirect_uri,
+            config.GOOGLE_REDIRECT_URI,
+        )
         return HTMLResponse(
             content=f"""
             <html>
             <head>
-                <title>Complete on Computer</title>
+                <title>Calendar Connection Failed</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #0D0D0D; color: #F5F5F5; }}
-                    h1 {{ color: #E9A28B; }}
-                    .url-box {{ background: #1A1A1A; padding: 12px; border-radius: 8px; word-break: break-all; margin: 16px 0; font-size: 12px; }}
-                    .instructions {{ color: #8A8A8A; line-height: 1.6; }}
-                    button {{ background: #E9A28B; color: black; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 16px; }}
+                    h1 {{ color: #ff6b6b; }}
+                    .hint {{ color: #BDBDBD; line-height: 1.6; }}
+                    .code {{ background: #1A1A1A; padding: 10px; border-radius: 8px; margin: 10px 0; word-break: break-all; }}
                 </style>
             </head>
             <body>
-                <h1>Almost there!</h1>
-                <p class="instructions">
-                    Since you're connecting from your phone, please complete this on your computer:
-                </p>
-                <ol class="instructions">
-                    <li>Open this URL on your computer's browser:</li>
-                </ol>
-                <div class="url-box">{server_url}</div>
-                <button onclick="navigator.clipboard.writeText('{server_url}').then(() => alert('Copied!'))">
-                    Copy URL
-                </button>
-                <p class="instructions" style="margin-top: 24px;">
-                    Or copy the URL above, paste it in your computer's browser, and replace 'localhost' with '{config.LOCAL_IP}'
-                </p>
+                <h1>Calendar connection failed</h1>
+                <p class="hint">OAuth redirect URI mismatch is the most common cause.</p>
+                <p class="hint">Actual callback URL:</p>
+                <div class="code">{actual_redirect_uri}</div>
+                <p class="hint">Configured GOOGLE_REDIRECT_URI:</p>
+                <div class="code">{config.GOOGLE_REDIRECT_URI}</div>
+                <p class="hint">Ensure both URLs are listed in Google Cloud Console Authorized redirect URIs.</p>
             </body>
             </html>
             """,
-            status_code=200,
+            status_code=400,
         )
 
     # Calculate expiry time
@@ -844,4 +876,5 @@ Give a clear, scannable answer:"""
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", str(config.BACKEND_PORT)))
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -160,12 +160,8 @@ async def exchange_code_for_tokens(
     if actual_redirect_uri and actual_redirect_uri not in redirect_uris_to_try:
         redirect_uris_to_try.insert(0, actual_redirect_uri)
 
-    # Add common localhost alternatives as fallback
-    localhost_variants = [
-        "http://localhost:8000/auth/google/callback",
-        "http://127.0.0.1:8000/auth/google/callback",
-    ]
-    for variant in localhost_variants:
+    # Optionally try additional redirect URIs (typically local dev loopback).
+    for variant in config.GOOGLE_FALLBACK_REDIRECT_URIS:
         if variant not in redirect_uris_to_try:
             redirect_uris_to_try.append(variant)
 
