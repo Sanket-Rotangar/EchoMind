@@ -14,7 +14,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEBHOOK_PUBLIC_BASE_URL = os.getenv("WEBHOOK_PUBLIC_BASE_URL", "http://localhost:8000")
 
 # Local network configuration - UPDATE LOCAL_IP in .env when you change WiFi
-LOCAL_IP = os.getenv("LOCAL_IP", "192.168.100.190")
+LOCAL_IP = os.getenv("LOCAL_IP", "10.17.197.201")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 LOCAL_BACKEND_URL = f"http://{LOCAL_IP}:{BACKEND_PORT}"
 
