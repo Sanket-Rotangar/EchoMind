@@ -476,3 +476,16 @@ async def get_all_meetings_for_chat(user_id: str) -> List[Dict[str, Any]]:
         meetings = response.json() or []
         logger.info(f"[DB] chat context loaded user={user_id} meetings={len(meetings)}")
         return meetings
+
+
+async def get_meeting_for_chat(user_id: str, meeting_id: str) -> Dict[str, Any]:
+    """Get one user-owned meeting for meeting-scoped chat context."""
+    logger.info(f"[DB] get meeting for chat user={user_id} meeting={meeting_id}")
+    url = _postgrest_url(
+        f"meetings?id=eq.{quote(meeting_id, safe='')}&user_id=eq.{quote(user_id, safe='')}&select=id,title,created_at,status,transcript_text,intelligence_data&limit=1"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=_supabase_headers())
+        response.raise_for_status()
+        rows = response.json() or []
+        return rows[0] if rows else {}

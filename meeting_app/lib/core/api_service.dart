@@ -127,6 +127,19 @@ class ApiService {
     return data;
   }
 
+  static Future<void> regenerateMeeting(String meetingId) async {
+    final response = await http.post(
+      Uri.parse('$fastApiBaseUrl/api/v1/meetings/$meetingId/regenerate'),
+      headers: _headers(),
+    ).timeout(_requestTimeout);
+
+    if (response.statusCode != 202) {
+      throw Exception(
+        _extractErrorMessage(response, 'Failed to regenerate meeting'),
+      );
+    }
+  }
+
   static Future<String> getCalendarAuthUrl() async {
     final response = await http.get(
       Uri.parse('$fastApiBaseUrl/auth/google/calendar/url'),
@@ -152,19 +165,27 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> sendChatMessage(String message) async {
+  static Future<Map<String, dynamic>> sendChatMessage(
+    String message, {
+    String? meetingId,
+  }) async {
+    final requestPayload = <String, dynamic>{'message': message};
+    if (meetingId != null && meetingId.trim().isNotEmpty) {
+      requestPayload['meeting_id'] = meetingId.trim();
+    }
+
     final response = await http.post(
       Uri.parse('$fastApiBaseUrl/api/v1/chat'),
       headers: _headers(contentType: 'application/json'),
-      body: jsonEncode({'message': message}),
+      body: jsonEncode(requestPayload),
     ).timeout(const Duration(seconds: 60)); // Longer timeout for AI responses
 
     if (response.statusCode != 200) {
       throw Exception(_extractErrorMessage(response, 'Chat request failed'));
     }
 
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    return payload;
+    final responsePayload = jsonDecode(response.body) as Map<String, dynamic>;
+    return responsePayload;
   }
 
   static String _extractErrorMessage(http.Response response, String fallback) {

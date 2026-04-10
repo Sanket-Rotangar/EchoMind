@@ -5,11 +5,12 @@ import ai_service
 from urllib.parse import urlencode
 import logging
 import asyncio
+import uuid
 
 logger = logging.getLogger(__name__)
 
 
-async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str):
+async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str, run_id: str):
     max_attempts = 36
     interval_seconds = 10
 
@@ -35,8 +36,9 @@ async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str):
             assembly_status = data.get("status")
             error_msg = data.get("error")
             logger.info(
-                "[PIPELINE][ASSEMBLY] poll meeting=%s transcript=%s attempt=%s status=%s",
+                "[PIPELINE][ASSEMBLY] poll meeting=%s run_id=%s transcript=%s attempt=%s status=%s",
                 meeting_id,
+                run_id,
                 transcript_id,
                 attempt,
                 assembly_status,
@@ -56,7 +58,7 @@ async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str):
                     meeting_id,
                     transcript_id,
                     assembly_status,
-                    {"source": "assembly_poll", "attempt": attempt},
+                    {"source": "assembly_poll", "attempt": attempt, "run_id": run_id},
                 )
                 return
 
@@ -70,8 +72,19 @@ async def _poll_for_transcript_completion(meeting_id: str, transcript_id: str):
     )
 
 
-async def process_audio_task(meeting_id: str, audio_path: str):
-    logger.info(f"[PIPELINE][ASSEMBLY] start meeting={meeting_id} path={audio_path}")
+async def process_audio_task(
+    meeting_id: str,
+    audio_path: str,
+    trigger_source: str = "initial_upload",
+):
+    run_id = uuid.uuid4().hex
+    logger.info(
+        "[PIPELINE][ASSEMBLY] start meeting=%s run_id=%s source=%s path=%s",
+        meeting_id,
+        run_id,
+        trigger_source,
+        audio_path,
+    )
 
     try:
         signed_url = await db_client.generate_signed_url(audio_path)
@@ -79,7 +92,11 @@ async def process_audio_task(meeting_id: str, audio_path: str):
             raise Exception("Failed to generate signed URL")
         logger.info(f"[PIPELINE][ASSEMBLY] signed-url-ready meeting={meeting_id}")
 
-        params = {"meetingId": meeting_id, "token": config.WEBHOOK_SECRET}
+        params = {
+            "meetingId": meeting_id,
+            "token": config.WEBHOOK_SECRET,
+            "runId": run_id,
+        }
         webhook_url = f"{config.WEBHOOK_PUBLIC_BASE_URL}/api/webhooks/assemblyai?{urlencode(params)}"
 
         async with httpx.AsyncClient() as client:
@@ -112,6 +129,8 @@ async def process_audio_task(meeting_id: str, audio_path: str):
             meeting_id,
             "transcribing",
             details={
+                "run_id": run_id,
+                "trigger_source": trigger_source,
                 "audio_path": audio_path,
                 "assembly_transcript_id": data.get("id"),
                 "webhook_url": webhook_url,
@@ -119,7 +138,7 @@ async def process_audio_task(meeting_id: str, audio_path: str):
             extra_updates={"assembly_transcript_id": data["id"]},
         )
 
-        await _poll_for_transcript_completion(meeting_id, data["id"])
+        await _poll_for_transcript_completion(meeting_id, data["id"], run_id)
 
         logger.info(f"[PIPELINE][ASSEMBLY] queued meeting={meeting_id}")
     except Exception as e:
@@ -127,6 +146,11 @@ async def process_audio_task(meeting_id: str, audio_path: str):
         await db_client.transition_meeting_state(
             meeting_id,
             "failed",
-            details={"stage": "assembly_submit", "error": str(e)},
+            details={
+                "stage": "assembly_submit",
+                "run_id": run_id,
+                "trigger_source": trigger_source,
+                "error": str(e),
+            },
             extra_updates={"failure_reason": f"assembly_submit: {e}"},
         )

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_service.dart';
 import '../core/theme.dart';
+import 'chat_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String meetingId;
@@ -14,6 +15,7 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   late Future<Map<String, dynamic>> _meetingFuture;
+  bool _isRegenerating = false;
 
   @override
   void initState() {
@@ -25,6 +27,95 @@ class _SummaryScreenState extends State<SummaryScreen> {
     setState(() {
       _meetingFuture = ApiService.getMeetingDetails(widget.meetingId);
     });
+  }
+
+  void _openMeetingAssistant(String meetingTitle) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          meetingId: widget.meetingId,
+          meetingTitle: meetingTitle,
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _asStringMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _canRegenerate(String status) {
+    return status == 'completed' || status == 'failed';
+  }
+
+  Future<void> _regenerateMeeting(String title, String status) async {
+    if (_isRegenerating || !_canRegenerate(status)) {
+      return;
+    }
+
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text(
+            'Regenerate Meeting?',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            'This reruns transcription and analysis for "$title" using the same uploaded audio.',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryPeach,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Regenerate'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (approved != true) {
+      return;
+    }
+
+    setState(() => _isRegenerating = true);
+    try {
+      await ApiService.regenerateMeeting(widget.meetingId);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Regeneration started. Processing in background.'),
+        ),
+      );
+      _refreshMeeting();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to regenerate meeting: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRegenerating = false);
+      }
+    }
   }
 
   String _statusLabel(String status) {
@@ -41,6 +132,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
         return 'Completed';
       case 'failed':
         return 'Failed';
+      case 'regenerate_requested':
+        return 'Regenerate Requested';
+      case 'transcript_snapshot':
+        return 'Transcript Snapshot Saved';
+      case 'analysis_snapshot':
+        return 'Analysis Snapshot Saved';
       default:
         return status;
     }
@@ -205,6 +302,13 @@ class _SummaryScreenState extends State<SummaryScreen> {
             return bTime.compareTo(aTime);
           });
 
+          final transcriptSnapshots = stateEvents
+              .where((event) => (event['stage'] ?? '').toString() == 'transcript_snapshot')
+              .toList();
+          final analysisSnapshots = stateEvents
+              .where((event) => (event['stage'] ?? '').toString() == 'analysis_snapshot')
+              .toList();
+
           return RefreshIndicator(
             onRefresh: () async => _refreshMeeting(),
             color: AppColors.primaryPeach,
@@ -240,6 +344,111 @@ class _SummaryScreenState extends State<SummaryScreen> {
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 12),
+                  _buildCard(
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome,
+                          color: AppColors.primaryPeach,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Ask AI about this meeting',
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () => _openMeetingAssistant(title),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryPeach,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                          label: const Text(
+                            'Open Chat',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (_canRegenerate(status)) ...[
+                    const SizedBox(height: 12),
+                    _buildCard(
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.restart_alt,
+                            color: AppColors.primaryPeach,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Regenerate transcript and summary',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _isRegenerating
+                                ? null
+                                : () => _regenerateMeeting(title, status),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryPeach,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            icon: _isRegenerating
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.black,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh, size: 16),
+                            label: Text(
+                              _isRegenerating ? 'Starting...' : 'Regenerate',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   // Processing status message
                   if (status != 'completed' && status != 'failed') ...[
@@ -375,6 +584,138 @@ class _SummaryScreenState extends State<SummaryScreen> {
                         }).toList(),
                       ),
                     ),
+                  ],
+
+                  if (transcriptSnapshots.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _buildSectionHeader(
+                      'Transcript History',
+                      Icons.description_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    ...transcriptSnapshots.take(3).map((event) {
+                      final details = _asStringMap(event['details']);
+                      final runId = (details['run_id'] ?? 'unknown').toString();
+                      final transcriptText =
+                          (details['transcript_text'] ?? '').toString();
+                      final createdAt = _formatDateTime(
+                        event['created_at']?.toString(),
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Run: $runId',
+                                style: const TextStyle(
+                                  color: AppColors.primaryPeach,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (createdAt.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  createdAt,
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                              if (transcriptText.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  transcriptText,
+                                  maxLines: 8,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+
+                  if (analysisSnapshots.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _buildSectionHeader('Analysis History', Icons.psychology_alt),
+                    const SizedBox(height: 12),
+                    ...analysisSnapshots.take(3).map((event) {
+                      final details = _asStringMap(event['details']);
+                      final runId = (details['run_id'] ?? 'unknown').toString();
+                      final createdAt = _formatDateTime(
+                        event['created_at']?.toString(),
+                      );
+                      final summary = (details['summary'] ?? '').toString();
+                      final intelligence = _asStringMap(
+                        details['intelligence_data'],
+                      );
+                      final actionCount =
+                          (intelligence['action_matrix'] is List)
+                          ? (intelligence['action_matrix'] as List).length
+                          : 0;
+                      final decisionsCount =
+                          (intelligence['decisions_register'] is List)
+                          ? (intelligence['decisions_register'] as List).length
+                          : 0;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Run: $runId',
+                                style: const TextStyle(
+                                  color: AppColors.primaryPeach,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (createdAt.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  createdAt,
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                              if (summary.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  summary,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 13,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              Text(
+                                'Action items: $actionCount • Decisions: $decisionsCount',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
                   ],
 
                   // Empty state

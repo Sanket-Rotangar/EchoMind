@@ -594,6 +594,81 @@ async def get_meeting_detail(
         raise HTTPException(status_code=500, detail="Failed to fetch meeting details")
 
 
+@app.post("/api/v1/meetings/{meeting_id}/regenerate", status_code=202)
+async def regenerate_meeting(
+    meeting_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Re-run the full pipeline for an existing meeting without re-recording audio."""
+    user_id = resolve_user_id(request, x_user_id)
+    logger.info(f"[REGENERATE] requested user={user_id} meeting={meeting_id}")
+
+    try:
+        meeting = await db_client.get_meeting_detail(user_id=user_id, meeting_id=meeting_id)
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        audio_path = (meeting.get("audio_storage_path") or "").strip()
+        if not audio_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Meeting cannot be regenerated because audio path is missing",
+            )
+
+        status = (meeting.get("status") or "uploaded").strip().lower()
+        in_progress_statuses = {"uploaded", "transcribing", "transcribed", "analyzing"}
+        if status in in_progress_statuses:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Meeting is currently {status}. Try again after processing finishes.",
+            )
+
+        await db_client.update_meeting(
+            meeting_id,
+            {
+                "title": "Processing Meeting...",
+                "status": "uploaded",
+                "failure_reason": None,
+                "assembly_transcript_id": None,
+                "transcript_text": None,
+                "intelligence_data": None,
+            },
+        )
+        await db_client.replace_action_items(meeting_id, [])
+        await db_client.insert_meeting_event(
+            meeting_id,
+            "regenerate_requested",
+            details={
+                "requested_by": user_id,
+                "previous_status": status,
+                "audio_path": audio_path,
+            },
+        )
+
+        background_tasks.add_task(
+            assembly_service.process_audio_task,
+            meeting_id,
+            audio_path,
+            "manual_regenerate",
+        )
+
+        logger.info(
+            f"[REGENERATE] queued user={user_id} meeting={meeting_id} path={audio_path}"
+        )
+        return {
+            "success": True,
+            "meetingId": meeting_id,
+            "message": "Meeting regeneration started.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[REGENERATE] failed user={user_id} meeting={meeting_id} error={e}")
+        raise HTTPException(status_code=500, detail="Failed to regenerate meeting")
+
+
 @app.post("/api/meetings/process", status_code=202)
 async def process_meeting(
     request: Request,
@@ -626,6 +701,7 @@ async def process_meeting(
         assembly_service.process_audio_task,
         meeting["id"],
         meeting["audio_storage_path"],
+        "initial_upload",
     )
     logger.info(f"[PROCESS] background-queued meeting={meeting['id']}")
 
@@ -644,6 +720,7 @@ async def assemblyai_webhook(request: Request, background_tasks: BackgroundTasks
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     meeting_id = request.query_params.get("meetingId")
+    run_id = request.query_params.get("runId")
     token = request.query_params.get("token")
 
     if not meeting_id:
@@ -658,15 +735,23 @@ async def assemblyai_webhook(request: Request, background_tasks: BackgroundTasks
         raise HTTPException(status_code=400, detail="transcript_id is required")
 
     logger.info(
-        f"[WEBHOOK] received meeting={meeting_id} transcript={transcript_id} status={status}"
+        f"[WEBHOOK] received meeting={meeting_id} run_id={run_id} transcript={transcript_id} status={status}"
     )
 
     if status not in {"completed", "error"}:
         logger.info(f"Ignoring webhook status '{status}' for meeting {meeting_id}")
         return {"success": True, "message": f"Ignored webhook status: {status}"}
 
+    webhook_payload = dict(body)
+    if run_id:
+        webhook_payload["run_id"] = run_id
+
     background_tasks.add_task(
-        ai_service.extract_insights_task, meeting_id, transcript_id, status, body
+        ai_service.extract_insights_task,
+        meeting_id,
+        transcript_id,
+        status,
+        webhook_payload,
     )
 
     return {"success": True, "message": "Webhook received"}
@@ -681,8 +766,9 @@ async def chat_with_meetings(
     x_user_id: str = Header(None, alias="x-user-id"),
 ):
     """
-    RAG-based chat endpoint that answers questions about user's meetings.
-    Uses all completed meetings as context to answer time-aware questions.
+    RAG-based chat endpoint that supports two modes:
+    - Global assistant mode: answers from all completed meetings
+    - Meeting-focused mode: answers from one selected meeting via meeting_id
     """
     user_id = resolve_user_id(request, x_user_id)
 
@@ -692,33 +778,78 @@ async def chat_with_meetings(
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     message = body.get("message", "").strip()
+    meeting_id = (body.get("meeting_id") or "").strip() or None
+
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
 
-    logger.info(f"[CHAT] user={user_id} message_length={len(message)}")
+    chat_mode = "meeting" if meeting_id else "all"
+    logger.info(
+        f"[CHAT] user={user_id} mode={chat_mode} meeting_id={meeting_id} message_length={len(message)}"
+    )
 
     try:
-        # Get all completed meetings for this user with full details
-        meetings_context = await db_client.get_all_meetings_for_chat(user_id)
+        context_scope = "all_meetings"
+        if meeting_id:
+            meeting = await db_client.get_meeting_for_chat(user_id, meeting_id)
+            if not meeting:
+                raise HTTPException(status_code=404, detail="Meeting not found")
 
-        if not meetings_context:
-            return {
-                "success": True,
-                "response": "You don't have any completed meetings yet. Record your first meeting and I'll be able to help you with questions about it!",
-                "meetings_searched": 0,
-            }
+            meetings_context = [meeting]
+            context_scope = "single_meeting"
+
+            has_transcript = bool((meeting.get("transcript_text") or "").strip())
+            has_intelligence = isinstance(meeting.get("intelligence_data"), dict) and bool(
+                meeting.get("intelligence_data")
+            )
+            if not has_transcript and not has_intelligence:
+                status = (meeting.get("status") or "uploaded").strip().lower()
+                title = (meeting.get("title") or "this meeting").strip()
+                if status == "failed":
+                    response_text = (
+                        f"I can't answer questions about {title} yet because processing failed. "
+                        "Please reprocess the meeting and try again."
+                    )
+                else:
+                    response_text = (
+                        f"I don't have enough context for {title} yet. "
+                        f"Current status is {status}. Please try again once transcription and analysis are complete."
+                    )
+
+                return {
+                    "success": True,
+                    "response": response_text,
+                    "meetings_searched": 1,
+                    "context_scope": context_scope,
+                    "meeting_id": meeting_id,
+                }
+        else:
+            meetings_context = await db_client.get_all_meetings_for_chat(user_id)
+
+            if not meetings_context:
+                return {
+                    "success": True,
+                    "response": "You don't have any completed meetings yet. Record your first meeting and I'll be able to help you with questions about it!",
+                    "meetings_searched": 0,
+                    "context_scope": context_scope,
+                }
 
         # Build context from meetings
+        max_transcript_len = 2000
         context_parts = []
         for meeting in meetings_context:
             meeting_date = meeting.get("created_at", "Unknown date")
             title = meeting.get("title", "Untitled Meeting")
+            status = meeting.get("status", "completed")
             transcript = meeting.get("transcript_text", "")
             intelligence = meeting.get("intelligence_data", {})
+            if not isinstance(intelligence, dict):
+                intelligence = {}
 
             meeting_context = f"""
 === MEETING: {title} ===
 Date: {meeting_date}
+Status: {status}
 """
             if intelligence:
                 if intelligence.get("bottom_line"):
@@ -745,7 +876,6 @@ Date: {meeting_date}
 
             if transcript:
                 # Limit transcript length to avoid token limits
-                max_transcript_len = 2000
                 if len(transcript) > max_transcript_len:
                     transcript = (
                         transcript[:max_transcript_len] + "... [transcript truncated]"
@@ -758,11 +888,13 @@ Date: {meeting_date}
 
         # Get current date/time for time-aware responses
         current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+        prompt_mode = "Single Meeting Focus" if context_scope == "single_meeting" else "All Meetings"
 
         # Build the prompt for Gemini
         prompt = f"""You are EchoMind Assistant - a concise, helpful AI that answers questions about the user's meetings.
 
 CURRENT DATE/TIME: {current_datetime}
+    CHAT CONTEXT MODE: {prompt_mode}
 
 MEETING DATA:
 {full_context}
@@ -772,6 +904,7 @@ RESPONSE RULES:
 2. Only use info from the meetings above - never make things up
 3. Understand time references (yesterday, last week, etc.) relative to current date
 4. If info isn't found, say so briefly
+    5. In Single Meeting Focus mode, answer using only that meeting context
 
 FORMATTING RULES (STRICT):
 - NEVER use #, *, or any markdown symbols
@@ -827,14 +960,19 @@ Give a clear, scannable answer:"""
         )
 
         logger.info(
-            f"[CHAT] success user={user_id} meetings_searched={len(meetings_context)}"
+            f"[CHAT] success user={user_id} mode={chat_mode} meetings_searched={len(meetings_context)}"
         )
 
         return {
             "success": True,
             "response": assistant_response,
             "meetings_searched": len(meetings_context),
+            "context_scope": context_scope,
+            "meeting_id": meeting_id,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.error(f"[CHAT] failed user={user_id} error={e}")

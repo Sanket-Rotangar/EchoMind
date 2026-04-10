@@ -4,7 +4,14 @@ import '../core/api_service.dart';
 import '../core/theme.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final String? meetingId;
+  final String? meetingTitle;
+
+  const ChatScreen({
+    super.key,
+    this.meetingId,
+    this.meetingTitle,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -16,11 +23,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _isLoading = false;
 
+  bool get _isMeetingMode =>
+      widget.meetingId != null && widget.meetingId!.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
+    final welcomeText = _isMeetingMode
+        ? "Hi! I'm your EchoMind assistant for this meeting. Ask about this transcript, summary, decisions, action items, or deadlines."
+        : "Hi! I'm your EchoMind assistant. Ask me anything about your meetings - like \"What did we discuss with the marketing team?\" or \"When is the annual review?\"";
+
     _messages.add(ChatMessage(
-      text: "Hi! I'm your EchoMind assistant. Ask me anything about your meetings - like \"What did we discuss with the marketing team?\" or \"When is the annual review?\"",
+      text: welcomeText,
       isUser: false,
       timestamp: DateTime.now(),
     ));
@@ -63,7 +77,10 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final response = await ApiService.sendChatMessage(message);
+      final response = await ApiService.sendChatMessage(
+        message,
+        meetingId: widget.meetingId,
+      );
       final assistantMessage = response['response'] as String? ?? 'Sorry, I couldn\'t process that request.';
       final meetingsSearched = response['meetings_searched'] as int? ?? 0;
 
@@ -137,8 +154,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Assistant',
+                        Text(
+                          _isMeetingMode ? 'Meeting Assistant' : 'Assistant',
                           style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 32,
@@ -147,7 +164,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Ask questions about your meetings',
+                          _isMeetingMode
+                              ? 'Ask questions about this meeting only'
+                              : 'Ask questions about your meetings',
                           style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 14,
@@ -171,6 +190,39 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
+
+            if (_isMeetingMode &&
+                widget.meetingTitle != null &&
+                widget.meetingTitle!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryPeach.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.primaryPeach.withOpacity(0.35),
+                      ),
+                    ),
+                    child: Text(
+                      'Context: ${widget.meetingTitle}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.primaryPeach,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
             const SizedBox(height: 8),
 
@@ -211,7 +263,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         controller: _messageController,
                         style: const TextStyle(color: AppColors.textPrimary),
                         decoration: InputDecoration(
-                          hintText: 'Ask about your meetings...',
+                          hintText: _isMeetingMode
+                              ? 'Ask about this meeting...'
+                              : 'Ask about your meetings...',
                           hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.6)),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

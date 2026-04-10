@@ -1,17 +1,4 @@
-
-# AI agent skill tooling
-.agent
-.agents
-.augment
-.claude
-.cline
-.github/copilot*
-.kilocode
-.qoder
-.qwen
-.roo
-.trae
-.windsurf
+# Environment variables - NEVER COMMIT
 .env
 
 # Google OAuth credentials - NEVER COMMIT
@@ -28,3 +15,4 @@ venv/
 
 # Logs
 *.log
+

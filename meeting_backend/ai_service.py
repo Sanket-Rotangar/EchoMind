@@ -13,8 +13,14 @@ genai.configure(api_key=config.GEMINI_API_KEY)
 async def extract_insights_task(
     meeting_id: str, transcript_id: str, status: str, webhook_payload: dict
 ):
+    run_id = str(
+        (webhook_payload or {}).get("run_id")
+        or (webhook_payload or {}).get("runId")
+        or "unknown"
+    )
+
     logger.info(
-        f"[PIPELINE][GEMINI] start meeting={meeting_id} transcript={transcript_id} status={status}"
+        f"[PIPELINE][GEMINI] start meeting={meeting_id} run_id={run_id} transcript={transcript_id} status={status}"
     )
 
     meeting = await db_client.get_meeting_by_id(meeting_id)
@@ -31,7 +37,11 @@ async def extract_insights_task(
         await db_client.transition_meeting_state(
             meeting_id,
             "failed",
-            details={"stage": "assembly_webhook", "webhook_payload": webhook_payload},
+            details={
+                "stage": "assembly_webhook",
+                "run_id": run_id,
+                "webhook_payload": webhook_payload,
+            },
             extra_updates={"failure_reason": "assembly_webhook:error"},
         )
         return
@@ -55,6 +65,7 @@ async def extract_insights_task(
                 "failed",
                 details={
                     "stage": "assembly_fetch",
+                    "run_id": run_id,
                     "assembly_status": "error",
                     "transcript_id": transcript_id,
                 },
@@ -71,6 +82,7 @@ async def extract_insights_task(
                 "failed",
                 details={
                     "stage": "assembly_fetch",
+                    "run_id": run_id,
                     "assembly_status": transcript_data.get("status"),
                     "transcript_id": transcript_id,
                 },
@@ -90,14 +102,27 @@ async def extract_insights_task(
             transcript_lines = [transcript_data.get("text", "")]
 
         transcript_text = "\n".join(transcript_lines)
+        snapshot_text = transcript_text[:20000]
         logger.info(
             f"[PIPELINE][GEMINI] transcript-ready meeting={meeting_id} lines={len(transcript_lines)}"
+        )
+
+        await db_client.insert_meeting_event(
+            meeting_id,
+            "transcript_snapshot",
+            details={
+                "run_id": run_id,
+                "transcript_id": transcript_id,
+                "line_count": len(transcript_lines),
+                "transcript_text": snapshot_text,
+            },
         )
 
         await db_client.transition_meeting_state(
             meeting_id,
             "transcribed",
             details={
+                "run_id": run_id,
                 "transcript_id": transcript_id,
                 "line_count": len(transcript_lines),
             },
@@ -107,7 +132,11 @@ async def extract_insights_task(
         await db_client.transition_meeting_state(
             meeting_id,
             "analyzing",
-            details={"model": "gemini-2.5-flash", "transcript_id": transcript_id},
+            details={
+                "run_id": run_id,
+                "model": "gemini-2.5-flash",
+                "transcript_id": transcript_id,
+            },
         )
 
         model = genai.GenerativeModel("gemini-2.5-flash")
@@ -158,6 +187,17 @@ async def extract_insights_task(
         insights = json.loads(raw_text.strip())
         logger.info(f"[PIPELINE][GEMINI] json-parse-success meeting={meeting_id}")
 
+        await db_client.insert_meeting_event(
+            meeting_id,
+            "analysis_snapshot",
+            details={
+                "run_id": run_id,
+                "transcript_id": transcript_id,
+                "summary": str(insights.get("bottom_line", "")),
+                "intelligence_data": insights,
+            },
+        )
+
         title = insights.get("bottom_line", "Untitled Meeting")
         title_str = str(title) if title else "Untitled Meeting"
         if len(title_str) > 40:
@@ -167,6 +207,7 @@ async def extract_insights_task(
             meeting_id,
             "completed",
             details={
+                "run_id": run_id,
                 "transcript_id": transcript_id,
                 "action_item_count": len(insights.get("action_matrix", [])),
             },
@@ -212,6 +253,7 @@ async def extract_insights_task(
             "failed",
             details={
                 "stage": "gemini_analyze",
+                "run_id": run_id,
                 "error": str(e),
                 "transcript_id": transcript_id,
             },
