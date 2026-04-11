@@ -1,7 +1,7 @@
 // EchoMind Background Service Worker
 // Handles audio recording and communication with the backend
 
-const BACKEND_URL = 'http://localhost:8000';
+let BACKEND_URL = 'https://echomind-tvw1.onrender.com';
 const KEEP_ALIVE_ALARM = 'echomind-keep-alive';
 
 // In-memory state (will be synced with storage)
@@ -12,6 +12,17 @@ let recordingStartTime = null;
 // Initialize - restore state from storage when service worker starts
 async function initializeState() {
   console.log('Initializing background service worker...');
+  
+  // Load backend URL from saved settings
+  try {
+    const settingsData = await chrome.storage.local.get(['echomind_settings']);
+    if (settingsData.echomind_settings && settingsData.echomind_settings.backendUrl) {
+      BACKEND_URL = settingsData.echomind_settings.backendUrl.replace(/\/+$/, '');
+    }
+    console.log('Backend URL:', BACKEND_URL);
+  } catch (e) {
+    console.error('Error loading backend URL:', e);
+  }
   
   try {
     const data = await chrome.storage.local.get(['echomind_recording_state']);

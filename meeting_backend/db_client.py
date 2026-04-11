@@ -519,23 +519,27 @@ async def get_groups(user_id: str) -> List[Dict[str, Any]]:
     logger.info(f"[DB] list groups user={user_id}")
     url = _postgrest_url(
         f"meeting_groups?user_id=eq.{quote(user_id, safe='')}"
-        f"&select=id,name,description,created_at,updated_at,meeting_group_members(count)"
+        f"&select=id,name,description,created_at,updated_at"
         f"&order=created_at.desc"
     )
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(
-            url, headers=_supabase_headers(prefer="count=exact")
-        )
+        response = await client.get(url, headers=_supabase_headers())
         response.raise_for_status()
         groups = response.json() or []
 
-        # Flatten the count from the nested relationship
+        # Get meeting counts for each group
         for group in groups:
-            members = group.pop("meeting_group_members", [])
-            if members and isinstance(members, list) and len(members) > 0:
-                group["meeting_count"] = members[0].get("count", 0)
-            else:
-                group["meeting_count"] = 0
+            count_url = _postgrest_url(
+                f"meeting_group_members?group_id=eq.{quote(group['id'], safe='')}"
+                f"&select=id"
+            )
+            count_response = await client.get(
+                count_url,
+                headers=_supabase_headers(prefer="count=exact"),
+            )
+            count_response.raise_for_status()
+            members = count_response.json() or []
+            group["meeting_count"] = len(members)
 
         logger.info(f"[DB] groups loaded user={user_id} count={len(groups)}")
         return groups

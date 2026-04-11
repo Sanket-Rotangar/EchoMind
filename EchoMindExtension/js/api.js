@@ -1,7 +1,7 @@
 // EchoMind API Service - Communicates with the backend
 class ApiService {
   constructor() {
-    this.baseUrl = 'http://localhost:8000';
+    this.baseUrl = 'https://echomind-tvw1.onrender.com';
   }
 
   async setBaseUrl(url) {

@@ -3,7 +3,7 @@
 const DEFAULT_SETTINGS = {
   inputDeviceId: 'default',
   outputDeviceId: 'default',
-  backendUrl: 'http://localhost:8000',
+  backendUrl: 'https://echomind-tvw1.onrender.com',
   autoUpload: true
 };
 

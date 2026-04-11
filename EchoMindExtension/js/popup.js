@@ -1,7 +1,20 @@
 // EchoMind Extension - Popup Script
 
-const BACKEND_URL = 'http://localhost:8000';
+let BACKEND_URL = 'https://echomind-tvw1.onrender.com';
 const GOOGLE_CLIENT_ID = '892230117968-s3n9bugmvj04n8dfb9056vc0gc2ve0p3.apps.googleusercontent.com';
+
+// Load backend URL from saved settings
+async function loadBackendUrl() {
+  try {
+    const result = await chrome.storage.local.get(['echomind_settings']);
+    if (result.echomind_settings && result.echomind_settings.backendUrl) {
+      BACKEND_URL = result.echomind_settings.backendUrl.replace(/\/+$/, '');
+    }
+  } catch (e) {
+    console.error('Error loading backend URL:', e);
+  }
+  console.log('Using backend URL:', BACKEND_URL);
+}
 
 // DOM Elements
 const loadingView = document.getElementById('loading-view');
@@ -47,6 +60,9 @@ async function init() {
   showView('loading');
   
   try {
+    // Load the configured backend URL from settings
+    await loadBackendUrl();
+    
     // Check if user is logged in
     const result = await chrome.storage.local.get(['echomind_user', 'echomind_auth_token']);
     
