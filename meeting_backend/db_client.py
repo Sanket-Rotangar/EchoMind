@@ -476,3 +476,265 @@ async def get_all_meetings_for_chat(user_id: str) -> List[Dict[str, Any]]:
         meetings = response.json() or []
         logger.info(f"[DB] chat context loaded user={user_id} meetings={len(meetings)}")
         return meetings
+
+
+# ============ Meeting Groups ============
+
+
+async def create_group(
+    user_id: str, name: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a new meeting group."""
+    logger.info(f"[DB] create group user={user_id} name={name}")
+    url = _postgrest_url("meeting_groups")
+    payload = {
+        "user_id": user_id,
+        "name": name,
+        "description": description,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=payload,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] create group failed user=%s status=%s response=%s",
+                user_id,
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            raise RuntimeError("Failed to create group")
+        logger.info(f"[DB] group created id={rows[0].get('id')}")
+        return rows[0]
+
+
+async def get_groups(user_id: str) -> List[Dict[str, Any]]:
+    """Get all groups for a user with meeting count."""
+    logger.info(f"[DB] list groups user={user_id}")
+    url = _postgrest_url(
+        f"meeting_groups?user_id=eq.{quote(user_id, safe='')}"
+        f"&select=id,name,description,created_at,updated_at,meeting_group_members(count)"
+        f"&order=created_at.desc"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            url, headers=_supabase_headers(prefer="count=exact")
+        )
+        response.raise_for_status()
+        groups = response.json() or []
+
+        # Flatten the count from the nested relationship
+        for group in groups:
+            members = group.pop("meeting_group_members", [])
+            if members and isinstance(members, list) and len(members) > 0:
+                group["meeting_count"] = members[0].get("count", 0)
+            else:
+                group["meeting_count"] = 0
+
+        logger.info(f"[DB] groups loaded user={user_id} count={len(groups)}")
+        return groups
+
+
+async def get_group_detail(user_id: str, group_id: str) -> Optional[Dict[str, Any]]:
+    """Get a group with its meetings."""
+    logger.info(f"[DB] group detail user={user_id} group={group_id}")
+    # First get the group
+    group_url = _postgrest_url(
+        f"meeting_groups?id=eq.{quote(group_id, safe='')}"
+        f"&user_id=eq.{quote(user_id, safe='')}"
+        f"&select=*"
+        f"&limit=1"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        group_response = await client.get(group_url, headers=_supabase_headers())
+        group_response.raise_for_status()
+        groups = group_response.json() or []
+        if not groups:
+            return None
+
+        group = groups[0]
+
+        # Get meetings in this group via the join table
+        members_url = _postgrest_url(
+            f"meeting_group_members?group_id=eq.{quote(group_id, safe='')}"
+            f"&select=meeting_id,added_at,meetings(id,title,status,created_at)"
+            f"&order=added_at.desc"
+        )
+        members_response = await client.get(members_url, headers=_supabase_headers())
+        members_response.raise_for_status()
+        members = members_response.json() or []
+
+        # Flatten: extract the meeting from nested join
+        meetings = []
+        for member in members:
+            meeting_data = member.get("meetings")
+            if meeting_data:
+                meeting_data["added_at"] = member.get("added_at")
+                meetings.append(meeting_data)
+
+        group["meetings"] = meetings
+        group["meeting_count"] = len(meetings)
+        return group
+
+
+async def update_group(
+    user_id: str, group_id: str, updates: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Update a group (only if owned by user)."""
+    logger.info(f"[DB] update group user={user_id} group={group_id}")
+    url = _postgrest_url(
+        f"meeting_groups?id=eq.{quote(group_id, safe='')}"
+        f"&user_id=eq.{quote(user_id, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.patch(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=updates,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] update group failed group=%s status=%s response=%s",
+                group_id,
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
+
+async def delete_group(user_id: str, group_id: str) -> bool:
+    """Delete a group (only if owned by user). Cascade deletes members."""
+    logger.info(f"[DB] delete group user={user_id} group={group_id}")
+    url = _postgrest_url(
+        f"meeting_groups?id=eq.{quote(group_id, safe='')}"
+        f"&user_id=eq.{quote(user_id, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.delete(url, headers=_supabase_headers())
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] delete group failed group=%s status=%s response=%s",
+                group_id,
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        return True
+
+
+async def add_meeting_to_group(group_id: str, meeting_id: str) -> Dict[str, Any]:
+    """Add a meeting to a group."""
+    logger.info(f"[DB] add meeting to group group={group_id} meeting={meeting_id}")
+    url = _postgrest_url("meeting_group_members")
+    payload = {
+        "group_id": group_id,
+        "meeting_id": meeting_id,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            url,
+            headers=_supabase_headers(prefer="return=representation"),
+            json=payload,
+        )
+        if response.status_code >= 400:
+            body_text = response.text
+            # Handle duplicate gracefully
+            if (
+                response.status_code == 409
+                or "23505" in body_text
+                or "unique_group_meeting" in body_text
+            ):
+                logger.info(
+                    f"[DB] meeting already in group group={group_id} meeting={meeting_id}"
+                )
+                return {"group_id": group_id, "meeting_id": meeting_id}
+            logger.error(
+                "[DB] add meeting to group failed status=%s response=%s",
+                response.status_code,
+                body_text,
+            )
+            response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else {"group_id": group_id, "meeting_id": meeting_id}
+
+
+async def remove_meeting_from_group(group_id: str, meeting_id: str) -> bool:
+    """Remove a meeting from a group."""
+    logger.info(f"[DB] remove meeting from group group={group_id} meeting={meeting_id}")
+    url = _postgrest_url(
+        f"meeting_group_members?group_id=eq.{quote(group_id, safe='')}"
+        f"&meeting_id=eq.{quote(meeting_id, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.delete(url, headers=_supabase_headers())
+        if response.status_code >= 400:
+            logger.error(
+                "[DB] remove meeting from group failed status=%s response=%s",
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
+        return True
+
+
+async def get_group_meetings_for_chat(
+    user_id: str, group_id: str
+) -> List[Dict[str, Any]]:
+    """Get all completed meetings in a group for RAG chat."""
+    logger.info(f"[DB] get group meetings for chat user={user_id} group={group_id}")
+
+    # Verify group ownership
+    group_url = _postgrest_url(
+        f"meeting_groups?id=eq.{quote(group_id, safe='')}"
+        f"&user_id=eq.{quote(user_id, safe='')}"
+        f"&select=id"
+        f"&limit=1"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        group_response = await client.get(group_url, headers=_supabase_headers())
+        group_response.raise_for_status()
+        if not (group_response.json() or []):
+            return []
+
+        # Get meeting IDs in the group
+        members_url = _postgrest_url(
+            f"meeting_group_members?group_id=eq.{quote(group_id, safe='')}"
+            f"&select=meeting_id"
+        )
+        members_response = await client.get(members_url, headers=_supabase_headers())
+        members_response.raise_for_status()
+        members = members_response.json() or []
+
+        if not members:
+            return []
+
+        meeting_ids = [m["meeting_id"] for m in members]
+
+        # Get completed meetings with full context
+        # PostgREST in() filter
+        ids_csv = ",".join(meeting_ids)
+        meetings_url = _postgrest_url(
+            f"meetings?id=in.({ids_csv})"
+            f"&status=eq.completed"
+            f"&select=id,title,created_at,transcript_text,intelligence_data"
+            f"&order=created_at.desc"
+        )
+        meetings_response = await client.get(
+            meetings_url, headers=_supabase_headers()
+        )
+        meetings_response.raise_for_status()
+        meetings = meetings_response.json() or []
+        logger.info(
+            f"[DB] group chat context loaded group={group_id} meetings={len(meetings)}"
+        )
+        return meetings
+

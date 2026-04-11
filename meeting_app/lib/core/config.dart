@@ -2,18 +2,18 @@
 /// 
 /// Backend URL can be overridden at build time using:
 /// ```
-/// flutter run --dart-define=FASTAPI_BASE_URL=http://your-ip:8000
+/// flutter run --dart-define=FASTAPI_BASE_URL=https://echomind-tvw1.onrender.com
 /// ```
 /// 
-/// When changing WiFi networks, update the IP either:
+/// For local testing, set a LAN URL either:
 /// 1. Via --dart-define flag when running
-/// 2. Or update the defaultValue below for development
+/// 2. Or update the defaultValue below temporarily
 class AppConfig {
   AppConfig._();
 
-  /// Default backend URL for development.
-  /// Update this when your local IP changes.
-  static const String _defaultBackendUrl = 'http://10.17.197.126:8000';
+  /// Default backend URL.
+  /// Uses live Render backend by default; no explicit port is needed for HTTPS.
+  static const String _defaultBackendUrl = 'https://echomind-tvw1.onrender.com';
 
   /// Backend API base URL.
   /// Uses compile-time environment variable if provided, otherwise falls back to default.

@@ -93,74 +93,159 @@ class AuthService extends ChangeNotifier {
     }
   }
   
-  /// Start the Google Calendar OAuth flow using loopback redirect.
+  /// Start the Google Calendar OAuth flow.
   /// 
-  /// This method:
-  /// 1. Starts a local HTTP server to catch the OAuth callback
-  /// 2. Opens the Google authorization URL in the browser
-  /// 3. Waits for Google to redirect back to the local server
-  /// 4. Sends the authorization code to the backend to exchange for tokens
+  /// On mobile (Android/iOS):
+  /// - Uses the backend's redirect URI so Google redirects to the deployed backend
+  /// - Backend shows a success page; app polls for completion
+  /// 
+  /// On desktop:
+  /// - Uses loopback redirect (local HTTP server on 127.0.0.1)
   Future<void> connectGoogleCalendar() async {
     if (_currentUser == null || _authToken == null) {
       onCalendarOAuthComplete?.call(false, 'Not logged in');
       return;
     }
-    
-    // Create OAuth callback server using config values
-    _oauthServer = OAuthCallbackServer(
-      port: AppConfig.oauthCallbackPort,
-      path: AppConfig.oauthCallbackPath,
-    );
-    final redirectUri = _oauthServer!.redirectUri;
-    
+
+    final bool isMobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (isMobile) {
+      await _connectCalendarMobile();
+    } else {
+      await _connectCalendarDesktop();
+    }
+  }
+
+  /// Mobile OAuth flow: redirect to the deployed backend.
+  /// Google redirects → backend handles callback → shows success page.
+  /// App polls the backend to detect when calendar_connected becomes true.
+  Future<void> _connectCalendarMobile() async {
     try {
-      // Get the authorization URL from the backend, passing our redirect URI
+      // Don't pass redirect_uri — let the backend use its configured production URI
       final authUrlResponse = await http.get(
-        Uri.parse('$backendUrl/auth/google/calendar/url?redirect_uri=${Uri.encodeComponent(redirectUri)}'),
+        Uri.parse('$backendUrl/auth/google/calendar/url'),
         headers: {
           'x-user-id': _currentUser!.id,
           'Authorization': 'Bearer $_authToken',
         },
       );
-      
+
       if (authUrlResponse.statusCode != 200) {
         throw Exception('Failed to get authorization URL');
       }
-      
+
       final authUrlData = jsonDecode(authUrlResponse.body);
       final authUrl = authUrlData['url'] as String;
-      
-      debugPrint('Starting OAuth flow with redirect URI: $redirectUri');
+
+      debugPrint('Starting mobile OAuth flow (backend redirect)');
       debugPrint('Auth URL: $authUrl');
-      
-      // Start listening for callback BEFORE opening browser
-      final callbackFuture = _oauthServer!.waitForCallback(
-        timeout: const Duration(minutes: 5),
-      );
-      
+
       // Open the authorization URL in the browser
       final launched = await launchUrl(
         Uri.parse(authUrl),
         mode: LaunchMode.externalApplication,
       );
-      
+
       if (!launched) {
         throw Exception('Could not open browser');
       }
-      
-      // Wait for the callback
+
+      // Poll the backend until calendar_connected becomes true
+      // The user will complete the flow in the browser and return to the app
+      debugPrint('Polling for calendar connection...');
+      bool connected = false;
+      for (int i = 0; i < 60; i++) {
+        // Poll for up to 5 minutes (60 * 5s)
+        await Future.delayed(const Duration(seconds: 5));
+
+        try {
+          final profileResponse = await http.get(
+            Uri.parse('$backendUrl/api/v1/user/profile'),
+            headers: {
+              'x-user-id': _currentUser!.id,
+              'Authorization': 'Bearer $_authToken',
+            },
+          );
+
+          if (profileResponse.statusCode == 200) {
+            final data = jsonDecode(profileResponse.body);
+            if (data['calendar_connected'] == true) {
+              connected = true;
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint('Poll error (will retry): $e');
+        }
+      }
+
+      if (connected) {
+        debugPrint('Calendar connected successfully via mobile flow!');
+        await refreshCalendarStatus();
+        onCalendarOAuthComplete?.call(true, null);
+      } else {
+        throw Exception(
+            'Calendar connection timed out. Please try again.');
+      }
+    } catch (e) {
+      debugPrint('Mobile OAuth error: $e');
+      onCalendarOAuthComplete?.call(false, e.toString());
+    }
+  }
+
+  /// Desktop OAuth flow: uses loopback redirect with local HTTP server.
+  Future<void> _connectCalendarDesktop() async {
+    _oauthServer = OAuthCallbackServer(
+      port: AppConfig.oauthCallbackPort,
+      path: AppConfig.oauthCallbackPath,
+    );
+    final redirectUri = _oauthServer!.redirectUri;
+
+    try {
+      final authUrlResponse = await http.get(
+        Uri.parse(
+            '$backendUrl/auth/google/calendar/url?redirect_uri=${Uri.encodeComponent(redirectUri)}'),
+        headers: {
+          'x-user-id': _currentUser!.id,
+          'Authorization': 'Bearer $_authToken',
+        },
+      );
+
+      if (authUrlResponse.statusCode != 200) {
+        throw Exception('Failed to get authorization URL');
+      }
+
+      final authUrlData = jsonDecode(authUrlResponse.body);
+      final authUrl = authUrlData['url'] as String;
+
+      debugPrint('Starting desktop OAuth flow with redirect URI: $redirectUri');
+
+      // Start listening for callback BEFORE opening browser
+      final callbackFuture = _oauthServer!.waitForCallback(
+        timeout: const Duration(minutes: 5),
+      );
+
+      final launched = await launchUrl(
+        Uri.parse(authUrl),
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        throw Exception('Could not open browser');
+      }
+
       final result = await callbackFuture;
-      
+
       if (result.containsKey('error')) {
         throw Exception(result['error']);
       }
-      
+
       final code = result['code']!;
       final state = result['state']!;
-      
+
       debugPrint('Received OAuth callback with code');
-      
-      // Send the code to the backend to exchange for tokens
+
       final tokenResponse = await http.post(
         Uri.parse('$backendUrl/auth/google/calendar/callback'),
         headers: {
@@ -173,25 +258,26 @@ class AuthService extends ChangeNotifier {
           'redirect_uri': redirectUri,
         }),
       );
-      
+
       if (tokenResponse.statusCode == 200) {
         debugPrint('Calendar connected successfully!');
         await refreshCalendarStatus();
         onCalendarOAuthComplete?.call(true, null);
       } else {
         final errorData = jsonDecode(tokenResponse.body);
-        final errorMessage = errorData['detail'] ?? 'Failed to connect calendar';
+        final errorMessage =
+            errorData['detail'] ?? 'Failed to connect calendar';
         throw Exception(errorMessage);
       }
     } catch (e) {
-      debugPrint('OAuth error: $e');
+      debugPrint('Desktop OAuth error: $e');
       onCalendarOAuthComplete?.call(false, e.toString());
     } finally {
       await _oauthServer?.stop();
       _oauthServer = null;
     }
   }
-  
+
   void disposeOAuthServer() {
     _oauthServer?.stop();
     _oauthServer = null;

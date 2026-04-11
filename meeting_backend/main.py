@@ -872,9 +872,349 @@ Give a clear, scannable answer:"""
         logger.error(f"[CHAT] failed user={user_id} error={e}")
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
+# ============ Meeting Groups Endpoints ============
+
+
+@app.post("/api/v1/groups")
+async def create_group(
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Create a new meeting group."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name is required")
+
+    description = body.get("description")
+
+    try:
+        group = await db_client.create_group(
+            user_id=user_id, name=name, description=description
+        )
+        logger.info(f"[GROUPS] created group={group['id']} user={user_id}")
+        return {"success": True, "data": group}
+    except Exception as e:
+        logger.error(f"Failed to create group: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create group")
+
+
+@app.get("/api/v1/groups")
+async def list_groups(
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """List all groups for the current user."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        groups = await db_client.get_groups(user_id=user_id)
+        logger.info(f"[GROUPS] list user={user_id} count={len(groups)}")
+        return {"success": True, "data": groups}
+    except Exception as e:
+        logger.error(f"Failed to fetch groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch groups")
+
+
+@app.get("/api/v1/groups/{group_id}")
+async def get_group_detail(
+    group_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Get a group with its meetings."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        group = await db_client.get_group_detail(user_id=user_id, group_id=group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return {"success": True, "data": group}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch group detail: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch group details")
+
+
+@app.patch("/api/v1/groups/{group_id}")
+async def update_group(
+    group_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Update a group's name or description."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    updates = {}
+    if "name" in body:
+        name = body["name"].strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Group name cannot be empty")
+        updates["name"] = name
+    if "description" in body:
+        updates["description"] = body["description"]
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    try:
+        group = await db_client.update_group(
+            user_id=user_id, group_id=group_id, updates=updates
+        )
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        logger.info(f"[GROUPS] updated group={group_id} user={user_id}")
+        return {"success": True, "data": group}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update group: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update group")
+
+
+@app.delete("/api/v1/groups/{group_id}")
+async def delete_group(
+    group_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Delete a group."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        await db_client.delete_group(user_id=user_id, group_id=group_id)
+        logger.info(f"[GROUPS] deleted group={group_id} user={user_id}")
+        return {"success": True, "message": "Group deleted"}
+    except Exception as e:
+        logger.error(f"Failed to delete group: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete group")
+
+
+@app.post("/api/v1/groups/{group_id}/meetings/{meeting_id}")
+async def add_meeting_to_group(
+    group_id: str,
+    meeting_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Add a meeting to a group."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    # Verify user owns the group
+    group = await db_client.get_group_detail(user_id=user_id, group_id=group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Verify user owns the meeting
+    meeting = await db_client.get_meeting_detail(user_id=user_id, meeting_id=meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    try:
+        await db_client.add_meeting_to_group(
+            group_id=group_id, meeting_id=meeting_id
+        )
+        logger.info(
+            f"[GROUPS] added meeting={meeting_id} to group={group_id} user={user_id}"
+        )
+        return {"success": True, "message": "Meeting added to group"}
+    except Exception as e:
+        logger.error(f"Failed to add meeting to group: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to add meeting to group"
+        )
+
+
+@app.delete("/api/v1/groups/{group_id}/meetings/{meeting_id}")
+async def remove_meeting_from_group(
+    group_id: str,
+    meeting_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """Remove a meeting from a group."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    # Verify user owns the group
+    group = await db_client.get_group_detail(user_id=user_id, group_id=group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    try:
+        await db_client.remove_meeting_from_group(
+            group_id=group_id, meeting_id=meeting_id
+        )
+        logger.info(
+            f"[GROUPS] removed meeting={meeting_id} from group={group_id} user={user_id}"
+        )
+        return {"success": True, "message": "Meeting removed from group"}
+    except Exception as e:
+        logger.error(f"Failed to remove meeting from group: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to remove meeting from group"
+        )
+
+
+@app.post("/api/v1/groups/{group_id}/chat")
+async def chat_with_group_meetings(
+    group_id: str,
+    request: Request,
+    x_user_id: str = Header(None, alias="x-user-id"),
+):
+    """RAG-based chat endpoint scoped to meetings in a specific group."""
+    user_id = resolve_user_id(request, x_user_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    message = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    logger.info(
+        f"[GROUP_CHAT] user={user_id} group={group_id} message_length={len(message)}"
+    )
+
+    try:
+        # Get completed meetings in the group
+        meetings_context = await db_client.get_group_meetings_for_chat(
+            user_id, group_id
+        )
+
+        if not meetings_context:
+            return {
+                "success": True,
+                "response": "This group doesn't have any completed meetings yet. Add meetings to this group and I'll be able to help you with questions about them!",
+                "meetings_searched": 0,
+            }
+
+        # Build context from meetings (same logic as global chat)
+        context_parts = []
+        for meeting in meetings_context:
+            meeting_date = meeting.get("created_at", "Unknown date")
+            title = meeting.get("title", "Untitled Meeting")
+            transcript = meeting.get("transcript_text", "")
+            intelligence = meeting.get("intelligence_data", {})
+
+            meeting_context = f"""
+=== MEETING: {title} ===
+Date: {meeting_date}
+"""
+            if intelligence:
+                if intelligence.get("bottom_line"):
+                    meeting_context += (
+                        f"Summary: {intelligence.get('bottom_line')}\n"
+                    )
+                if intelligence.get("decisions_register"):
+                    meeting_context += f"Decisions Made: {', '.join(intelligence.get('decisions_register', []))}\n"
+                if intelligence.get("action_matrix"):
+                    actions = intelligence.get("action_matrix", [])
+                    action_strs = []
+                    for a in actions:
+                        if isinstance(a, dict):
+                            action_str = f"- {a.get('assignee', 'Unknown')}: {a.get('task', 'No task')}"
+                            if a.get("deadline"):
+                                action_str += f" (Due: {a.get('deadline')})"
+                            action_strs.append(action_str)
+                    if action_strs:
+                        meeting_context += (
+                            f"Action Items:\n" + "\n".join(action_strs) + "\n"
+                        )
+                if intelligence.get("risks_and_blockers"):
+                    meeting_context += f"Risks/Blockers: {', '.join(intelligence.get('risks_and_blockers', []))}\n"
+                if intelligence.get("key_metrics"):
+                    meeting_context += f"Key Metrics: {', '.join(intelligence.get('key_metrics', []))}\n"
+
+            if transcript:
+                max_transcript_len = 2000
+                if len(transcript) > max_transcript_len:
+                    transcript = (
+                        transcript[:max_transcript_len]
+                        + "... [transcript truncated]"
+                    )
+                meeting_context += f"\nTranscript Excerpt:\n{transcript}\n"
+
+            context_parts.append(meeting_context)
+
+        full_context = "\n\n".join(context_parts)
+        current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+
+        # Get group info for context
+        group = await db_client.get_group_detail(user_id, group_id)
+        group_name = group.get("name", "Unknown Group") if group else "Unknown Group"
+
+        prompt = f"""You are EchoMind Assistant - a concise, helpful AI that answers questions about meetings in the group "{group_name}".
+
+CURRENT DATE/TIME: {current_datetime}
+
+MEETING DATA (from group "{group_name}"):
+{full_context}
+
+RESPONSE RULES:
+1. Be CONCISE - give the key info in 2-4 sentences max for simple questions
+2. Only use info from the meetings above - never make things up
+3. Understand time references (yesterday, last week, etc.) relative to current date
+4. If info isn't found, say so briefly
+5. You are answering about meetings specifically in this group
+
+FORMATTING RULES (STRICT):
+- NEVER use #, *, or any markdown symbols
+- For section headers, just write the title followed by a colon on its own line
+- Use dash bullets (- ) for lists, keep each item to one line
+- Put the most important answer FIRST, then details
+- Maximum 3-5 bullet points per section
+- No need for headers if the answer is simple (1-2 sentences)
+
+USER QUESTION: {message}
+
+Give a clear, scannable answer:"""
+
+        import google.generativeai as genai
+
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+
+        assistant_response = (
+            response.text.strip()
+            if response.text
+            else "I couldn't generate a response. Please try again."
+        )
+
+        logger.info(
+            f"[GROUP_CHAT] success user={user_id} group={group_id} meetings_searched={len(meetings_context)}"
+        )
+
+        return {
+            "success": True,
+            "response": assistant_response,
+            "meetings_searched": len(meetings_context),
+        }
+
+    except Exception as e:
+        logger.error(
+            f"[GROUP_CHAT] failed user={user_id} group={group_id} error={e}"
+        )
+        raise HTTPException(status_code=500, detail=f"Group chat failed: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", str(config.BACKEND_PORT)))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
